@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KIDHEN | Login</title>
+    <link rel="stylesheet" href="/css/output.css">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&display=swap" rel="stylesheet">
+</head>
+
+<body class="min-h-screen bg-[#161D63] flex items-center justify-center px-4 py-10">
+    <div class="w-full max-w-[832px] flex flex-col md:flex-row items-center justify-between gap-12">
+
+        <img src="/img/logo-big.svg" alt="KIDHEN" class="w-[280px] h-auto select-none">
+
+        <div class="w-full max-w-[380px] min-h-[300px] bg-white rounded-3xl px-10 py-12 flex flex-col justify-center gap-4 shadow-xl">
+            <a href="/signin" class="block w-full hover:opacity-80 transition">
+                <img src="/img/btn-signin.svg" class="w-full h-auto">
+            </a>
+
+            <div class="flex items-center gap-3 text-xs text-gray-400">
+                <span class="flex-1 h-px bg-gray-200"></span> or <span class="flex-1 h-px bg-gray-200"></span>
+            </div>
+
+            <button type="button" onclick="alert('Google Login จะเชื่อมต่อภายหลัง')"
+                class="w-full hover:opacity-80 transition">
+                <img src="/img/btn-google.svg" alt="Continue with Google" class="w-full h-auto">
+            </button>
+
+            <% if (devAccounts && devAccounts.length) { %>
+                <!-- เพิ่ม (3b-2): บัญชีทดลอง แสดงเฉพาะตอนรันในเครื่อง (SQLite, ไม่ใช่ production) -->
+                <details class="text-xs text-gray-500">
+                    <summary class="cursor-pointer text-center">บัญชีทดลอง (รหัสผ่าน 1234) · user&lt;รหัสคณะ&gt; / staff&lt;รหัสคณะ&gt;</summary>
+                    <ul class="mt-2 space-y-1 max-h-60 overflow-y-auto text-left">
+                        <% devAccounts.forEach(a => { %>
+                            <li><b><%= a.username %></b> · <%= a.email %> · <%= a.role %></li>
+                        <% }) %>
+                    </ul>
+                </details>
+            <% } %>
+        </div>
+
+    </div>
+</body>
+
+</html>

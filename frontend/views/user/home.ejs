@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>KIDHEN | <%= title %></title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+
+<body class="bg-[#EEEDEA]">
+
+<!-- แก้: ไม่แสดง FAQ mock เก่าที่ไม่สัมพันธ์กับ AI -->
+<div class="flex min-h-screen">
+  <%- include("../partials/sidebar-user") %>
+
+  <main class="flex-1 min-w-0">
+    <%- include("../partials/topbar") %>
+
+    <section class="p-6 flex flex-col gap-6">
+
+      <% if (sent) { %>
+        <p class="bg-[#E3FBD2] text-[#3A8A12]
+                  rounded-xl p-4">
+          ส่งคำร้องเรียบร้อยแล้ว
+          เจ้าหน้าที่จะตรวจสอบให้เร็วที่สุด
+        </p>
+      <% } %>
+
+      <!-- ของเดิม: สถิติคำร้องของผู้ใช้ -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <%
+          const cards = [
+            ["คำร้องทั้งหมด", stats.total],
+            ["รอดำเนินการ", stats.pending],
+            ["กำลังดำเนินการ", stats.inProgress],
+            ["เสร็จสิ้น", stats.done]
+          ];
+        %>
+
+        <% cards.forEach(([label, value]) => { %>
+          <div class="bg-white rounded-3xl p-5">
+            <p class="text-gray-500 text-sm">
+              <%= label %>
+            </p>
+
+            <p class="mt-5 text-4xl font-bold
+                      text-[#1F2A8A]">
+              <%= value %>
+            </p>
+          </div>
+        <% }) %>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="flex flex-col gap-6">
+
+          <div class="bg-white rounded-3xl p-8">
+            <h2 class="text-2xl font-bold text-[#F6A85A]">
+              แจ้งปัญหา
+            </h2>
+
+            <p class="mt-3 text-sm">
+              ตรวจหัวข้อที่มีผู้แจ้งแล้ว
+              หรือส่งคำร้องใหม่พร้อมรายละเอียด
+            </p>
+
+            <a href="/user/requests/new"
+               class="inline-block mt-5 rounded-lg
+                      bg-[#F6A85A] px-6 py-3 font-semibold">
+              ส่งคำร้องใหม่
+            </a>
+          </div>
+
+          <!-- แก้: ลิงก์ไปสรุปจากข้อมูลจริง -->
+          <div class="bg-white rounded-3xl p-8">
+            <h2 class="text-2xl font-bold text-[#F6A85A]">
+              ปัญหาที่ถูกรายงานแล้ว
+            </h2>
+
+            <p class="mt-3 text-sm">
+              ดูสรุปจากคำร้องจริง
+              และแจ้งว่าคุณพบปัญหาเดียวกันได้
+            </p>
+
+            <a href="/user/issues"
+               class="inline-block mt-5 rounded-lg
+                      bg-[#1F2A8A] text-white px-6 py-3">
+              ดูปัญหาที่ถูกรายงานแล้ว
+            </a>
+          </div>
+
+        </div>
+
+        <div class="bg-white rounded-3xl p-8">
+          <h2 class="text-2xl font-bold text-[#F6A85A]">
+            คำร้องของฉัน
+          </h2>
+
+          <% if (!myRequests.length) { %>
+            <p class="mt-4 text-gray-500">
+              ยังไม่มีคำร้อง
+            </p>
+          <% } %>
+
+          <% myRequests.slice(0, 5).forEach(r => { %>
+            <a href="/user/requests/<%= r.id %>"
+               class="block mt-4 border-b pb-4">
+
+              <p class="font-semibold">
+                <%= r.code %> — <%= r.title %>
+              </p>
+
+              <p class="mt-2 text-sm text-gray-500">
+                <%= r.status %>
+              </p>
+            </a>
+          <% }) %>
+
+          <a href="/user/requests"
+             class="inline-block mt-5
+                    text-[#1F2A8A] underline">
+            ดูคำร้องทั้งหมด
+          </a>
+        </div>
+
+      </div>
+    </section>
+  </main>
+</div>
+
+</body>
+</html>

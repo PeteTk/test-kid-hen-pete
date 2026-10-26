@@ -1,0 +1,50 @@
+<%
+  const menus = [
+    { key: "home",          label: "หน้าหลัก",               href: "/user/home" },
+    { key: "issues",        label: "ปัญหาที่ถูกรายงานแล้ว",   href: "/user/issues" },
+    { key: "new",           label: "แจ้งปัญหา",              href: "/user/requests/new" },
+    { key: "requests",      label: "สถานะคำร้องของฉัน",       href: "/user/requests" },
+    { key: "notifications", label: "แจ้งเตือน",              href: "/notifications" },
+  ];
+%>
+
+<aside id="sidebar"
+       class="fixed inset-y-0 left-0 z-40 w-[240px] h-screen bg-[#161D63] flex flex-col shrink-0 overflow-y-auto
+              -translate-x-full transition-transform duration-200
+              lg:static lg:translate-x-0 lg:w-[220px] lg:h-auto lg:min-h-screen">
+
+  <!-- โลโก้ + ปุ่มปิด (ปุ่มปิดแสดงเฉพาะมือถือ) -->
+  <!-- โลโก้ (มือถือเว้นด้านบนไว้ให้ปุ่ม ☰ ลอยอยู่) -->
+  <div class="px-6 py-6">
+    <img src="/img/logo-small.svg" alt="KIDHEN" class="block mx-auto w-[150px] h-auto">
+  </div>
+  
+  <nav class="flex flex-col mt-4">
+    <% menus.forEach(m => { %>
+      <a href="<%= m.href %>"
+         class="px-6 py-3 lg:py-2.5 text-base lg:text-sm font-semibold border-l-4
+                <%= active === m.key
+                    ? 'border-[#F6A85A] bg-white/10 text-[#F6A85A]'
+                    : 'border-transparent text-white hover:bg-white/5' %>">
+        <%= m.label %>
+      </a>
+    <% }) %>
+  </nav>
+
+  <!-- ออกจากระบบ -->
+  <div class="mt-auto px-4 pb-6 pt-4 border-t border-white/10">
+    <a href="/logout"
+       onclick="return confirm('ต้องการออกจากระบบใช่หรือไม่?')"
+       class="group flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-semibold text-white/80
+              hover:bg-white/10 hover:text-[#F6A85A] transition">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           class="transition group-hover:translate-x-0.5">
+        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+        <path d="M16 17l5-5-5-5"/>
+        <path d="M21 12H9"/>
+      </svg>
+      ออกจากระบบ
+    </a>
+  </div>
+</aside>

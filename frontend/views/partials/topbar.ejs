@@ -1,0 +1,67 @@
+<!-- พื้นหลังมืดตอนเปิดเมนูบนมือถือ -->
+<div id="sidebarOverlay" class="fixed inset-0 z-30 bg-black/40 hidden lg:hidden"></div>
+
+<header class="h-[64px] flex items-center justify-between gap-3 px-4 lg:px-6 border-b-4 border-[#E2E1DD]">
+
+    <div class="flex items-center gap-2 min-w-0">
+        <!-- ปุ่ม ☰ / ✕ เปิด-ปิดเมนู (แสดงเฉพาะจอเล็ก) -->
+        <button type="button" id="menuToggle" aria-label="เปิด/ปิดเมนู" aria-expanded="false"
+                class="group lg:hidden relative z-50 w-10 h-10 shrink-0 rounded-lg
+                       flex flex-col items-center justify-center gap-1.5 hover:bg-black/5">
+            <span class="block w-6 h-0.5 rounded bg-[#1F2A8A] transition duration-200
+                         group-aria-expanded:translate-y-2 group-aria-expanded:rotate-45 group-aria-expanded:bg-white"></span>
+            <span class="block w-6 h-0.5 rounded bg-[#1F2A8A] transition duration-200
+                         group-aria-expanded:opacity-0"></span>
+            <span class="block w-6 h-0.5 rounded bg-[#1F2A8A] transition duration-200
+                         group-aria-expanded:-translate-y-2 group-aria-expanded:-rotate-45 group-aria-expanded:bg-white"></span>
+        </button>
+
+        <h1 class="text-xl lg:text-2xl font-bold text-[#1F2A8A] truncate">
+            <%= title %>
+        </h1>
+    </div>
+
+    <div class="flex items-center gap-2 lg:gap-3 shrink-0">
+        <a href="/notifications" title="การแจ้งเตือน"
+           class="relative w-10 h-10 rounded-full bg-[#D9D9D9] flex items-center justify-center hover:bg-[#C9C9C9]">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="black">
+                <path d="M12 22a2.5 2.5 0 0 0 2.45-2h-4.9A2.5 2.5 0 0 0 12 22zm7-6V11a7 7 0 0 0-5.5-6.84V3.5a1.5 1.5 0 0 0-3 0v.66A7 7 0 0 0 5 11v5l-2 2v1h18v-1z" />
+            </svg>
+            <% if (unreadCount > 0) { %>
+                <span class="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white text-xs flex items-center justify-center">
+                    <%= unreadCount %>
+                </span>
+            <% } %>
+        </a>
+
+        <a href="/profile" title="แก้ไขข้อมูลผู้ใช้">
+            <img src="<%= currentAvatar || '/img/avatar.svg' %>" alt="โปรไฟล์"
+                 class="w-10 h-10 rounded-full object-cover bg-gray-300 hover:ring-2 hover:ring-[#F6A85A]">
+        </a>
+    </div>
+</header>
+
+<script>
+    // ปุ่ม ☰ กดเปิด-ปิดเมนูบนมือถือ
+    (() => {
+        const sidebar = document.getElementById("sidebar");
+        const overlay = document.getElementById("sidebarOverlay");
+        const toggle = document.getElementById("menuToggle");
+        if (!sidebar || !overlay || !toggle) return;
+
+        const setOpen = (isOpen) => {
+            sidebar.classList.toggle("-translate-x-full", !isOpen);
+            overlay.classList.toggle("hidden", !isOpen);
+            document.body.classList.toggle("overflow-hidden", isOpen); // กันหน้าเลื่อนตอนเมนูเปิด
+            toggle.setAttribute("aria-expanded", String(isOpen));      // ทำให้ ☰ หมุนเป็น ✕
+        };
+
+        toggle.addEventListener("click", () => {
+            setOpen(toggle.getAttribute("aria-expanded") !== "true");
+        });
+        overlay.addEventListener("click", () => setOpen(false));          // กดพื้นหลังมืด = ปิด
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") setOpen(false);                       // กด Esc = ปิด
+        });
+    })();
+</script>

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIDHEN | <%= title %></title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+<body class="bg-[#EEEDEA]">
+<!-- เพิ่ม (3c): หน้านี้ถูกเรียกจาก routes/faq.js แต่เดิมไม่มีไฟล์ view -->
+<div class="flex min-h-screen">
+  <%- include("../partials/sidebar-admin") %>
+  <main class="flex-1 min-w-0">
+    <%- include("../partials/topbar") %>
+    <section class="p-4">
+      <div class="bg-white rounded-xl p-6">
+        <a href="/admin/faq" class="inline-block bg-[#F6A85A] rounded-full px-4 py-2">← ย้อนกลับ</a>
+        <h2 class="mt-5 text-xl font-bold text-[#1F2A8A]">แก้สถานที่คำร้อง <%= item.code %></h2>
+        <p class="text-sm text-gray-500 mt-1"><%= item.title %> · <%= item.location %></p>
+
+        <form method="POST" action="/admin/faq/requests/<%= item.id %>/location" class="mt-6">
+          <input type="hidden" name="_csrf" value="<%= aiCsrf %>">
+          <%- include("../partials/location-fields", { FACULTIES, placeValues }) %>
+          <button type="submit" class="mt-6 px-6 py-2 rounded-full border border-black bg-[#F6A85A] font-bold">บันทึก</button>
+        </form>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

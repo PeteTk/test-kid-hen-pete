@@ -1,0 +1,13 @@
+node_modules/
+.env
+.vsls.*
+!.env.example
+*.log
+dist/
+build/
+*.pem
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+frontend/public/uploads/
+backend/data/db/

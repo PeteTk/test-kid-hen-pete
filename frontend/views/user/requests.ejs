@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIDHEN | <%= title %></title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+<body class="bg-[#EEEDEA]">
+<div class="flex min-h-screen">
+  <%- include("../partials/sidebar-user") %>
+
+  <main class="flex-1 min-w-0">
+    <%- include("../partials/topbar") %>
+
+    <section class="p-4 lg:p-6 flex flex-col gap-4">
+
+      <!-- ค้นหา + ตัวกรอง -->
+      <form method="GET" action="/user/requests" class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+        <input type="text" name="q" value="<%= filters.q %>" placeholder="ค้นหาคำร้อง..."
+               class="w-full md:w-[420px] h-11 px-5 rounded-lg border border-gray-400 bg-white text-sm focus:outline-none focus:ring-2 focus:ring-[#1F2A8A]">
+
+        <div class="grid grid-cols-2 gap-3 md:flex md:gap-4 md:ml-auto">
+          <select name="type" onchange="this.form.submit()"
+                  class="h-11 w-full md:w-[180px] px-4 rounded-lg border border-gray-400 bg-white text-sm">
+            <option value="">ทุกประเภท</option>
+            <% TYPES.forEach(t => { %>
+              <option value="<%= t %>" <%= filters.type === t ? "selected" : "" %>><%= t %></option>
+            <% }) %>
+          </select>
+
+          <select name="status" onchange="this.form.submit()"
+                  class="h-11 w-full md:w-[180px] px-4 rounded-lg border border-gray-400 bg-white text-sm">
+            <option value="">ทุกสถานะ</option>
+            <% STATUSES.forEach(s => { %>
+              <option value="<%= s %>" <%= filters.status === s ? "selected" : "" %>><%= s %></option>
+            <% }) %>
+          </select>
+        </div>
+      </form>
+
+      <!-- รายการคำร้อง -->
+      <div class="bg-white p-4 lg:p-6 min-h-[560px]">
+        <h2 class="text-base md:text-lg font-bold mb-4">คำร้องทั้งหมด (<%= list.length %> รายการ)</h2>
+
+        <% if (list.length === 0) { %>
+          <div class="py-10 flex flex-col items-center gap-3 text-gray-400">
+            <p>ไม่พบคำร้อง</p>
+            <a href="/user/requests/new"
+               class="px-5 py-2 rounded-full bg-[#F6A85A] text-sm font-semibold text-black hover:bg-[#F39A3E]">
+              แจ้งปัญหาใหม่
+            </a>
+          </div>
+        <% } else { %>
+
+          <!-- ===== คอม / แท็บเล็ต: ตาราง ===== -->
+          <div class="hidden md:block overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-gray-500 border-b-2 border-gray-700">
+                  <th class="text-left py-3 px-4 font-medium">หมายเลขคำร้อง</th>
+                  <th class="text-left py-3 px-4 font-medium">หัวข้อ</th>
+                  <th class="py-3 px-4 font-medium">ประเภท</th>
+                  <th class="py-3 px-4 font-medium">วันที่แจ้ง</th>
+                  <th class="py-3 px-4 font-medium">สถานะ</th>
+                  <th class="py-3 px-4 font-medium"></th>
+                </tr>
+              </thead>
+
+              <tbody>
+                <% list.forEach(r => { %>
+                  <tr class="border-b border-gray-200 hover:bg-[#EAF1FB]">
+                    <td class="py-3 px-4 font-semibold whitespace-nowrap"><%= r.code %></td>
+                    <td class="py-3 px-4"><%= r.title %></td>
+                    <td class="py-3 px-4 text-center whitespace-nowrap"><%= r.type %></td>
+                    <td class="py-3 px-4 text-center whitespace-nowrap"><%= r.date %></td>
+                    <td class="py-3 px-4 text-center">
+                      <%- include("../partials/status-badge", { status: r.status }) %>
+                    </td>
+                    <td class="py-3 px-4 text-center">
+                      <a href="/user/requests/<%= r.id %>"
+                         class="inline-block px-3 py-0.5 rounded-md border border-gray-700 bg-[#D9D9D9] text-xs whitespace-nowrap hover:bg-[#C9C9C9]">
+                        รายละเอียด
+                      </a>
+                    </td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- ===== มือถือ: การ์ด ===== -->
+          <div class="md:hidden flex flex-col gap-3">
+            <% list.forEach(r => { %>
+              <a href="/user/requests/<%= r.id %>"
+                 class="block rounded-xl border border-gray-200 p-4 hover:bg-gray-50 active:bg-gray-100">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-bold"><%= r.code %></span>
+                  <%- include("../partials/status-badge", { status: r.status }) %>
+                </div>
+
+                <p class="mt-2 font-semibold"><%= r.title %></p>
+
+                <div class="mt-3 flex items-center justify-between gap-2">
+                  <span class="text-xs text-gray-500"><%= r.type %> · <%= r.date %></span>
+                  <span class="px-3 py-1 rounded-md border border-gray-700 bg-[#D9D9D9] text-xs whitespace-nowrap">
+                    รายละเอียด
+                  </span>
+                </div>
+              </a>
+            <% }) %>
+          </div>
+
+        <% } %>
+      </div>
+
+    </section>
+  </main>
+</div>
+</body>
+</html>

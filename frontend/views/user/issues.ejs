@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0">
+
+  <title>KIDHEN | <%= title %></title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+
+<body class="bg-[#EEEDEA]">
+
+<!-- แก้: แสดงภาพรวม ไม่อ้างว่าทุกคำร้องเป็นเหตุการณ์เดียวกัน -->
+<div class="flex min-h-screen">
+  <%- include("../partials/sidebar-user") %>
+
+  <main class="flex-1 min-w-0">
+    <%- include("../partials/topbar") %>
+
+    <section class="p-5 flex flex-col gap-4">
+
+      <p class="text-sm text-gray-600">
+        สรุปโดย AI จากคำร้องที่เกี่ยวข้อง
+        อัปเดตหัวข้อรายสัปดาห์
+        ส่วนจำนวนและสถานะอัปเดตเมื่อเปิดหน้านี้
+      </p>
+
+      <% if (flash) { %>
+        <p role="alert"
+           class="bg-white text-red-600 rounded-lg p-4">
+          <%= flash %>
+        </p>
+      <% } %>
+
+      <form method="GET"
+            action="/user/issues"
+            class="flex flex-wrap gap-3">
+
+        <input name="q"
+               value="<%= q %>"
+               placeholder="ค้นหาปัญหาหรือสถานที่"
+               class="border bg-white rounded-lg p-3">
+
+        <button class="bg-[#1F2A8A] text-white
+                       rounded-lg px-5">
+          ค้นหา
+        </button>
+
+        <a href="/user/requests/new"
+           class="bg-[#F6A85A] rounded-lg p-3">
+          แจ้งหัวข้ออื่น
+        </a>
+      </form>
+
+      <% if (!topics.length) { %>
+        <p class="bg-white rounded-xl p-6">
+          ยังไม่พบหัวข้อที่เผยแพร่
+          สามารถแจ้งคำร้องใหม่ได้
+        </p>
+      <% } %>
+
+      <% topics.forEach(t => { %>
+        <article class="bg-white rounded-xl p-6">
+
+          <h2 class="text-xl font-bold text-[#1F2A8A]">
+            <%= t.title %>
+          </h2>
+
+          <p class="text-sm text-gray-500 mt-2">
+            <%= t.location %>
+            · ผู้แจ้ง <%= t.people %> คน
+            / <%= t.count %> คำร้อง
+          </p>
+
+          <p class="mt-4 whitespace-pre-wrap"><%= t.summary %></p>
+
+          <p class="mt-4 text-sm">
+            รอดำเนินการ
+            <%= t.counts["รอดำเนินการ"] %>
+            · กำลังดำเนินการ
+            <%= t.counts["กำลังดำเนินการ"] %>
+            · เสร็จสิ้น
+            <%= t.counts["เสร็จสิ้น"] %>
+          </p>
+
+          <!-- เพิ่ม: งานเก่าเสร็จแล้วก็แจ้งว่าเกิดซ้ำได้ -->
+          <details class="mt-5">
+            <summary class="cursor-pointer font-semibold
+                            text-[#1F2A8A]">
+              <%= t.open
+                ? "พบปัญหานี้เหมือนกัน"
+                : "พบปัญหานี้อีกครั้ง" %>
+            </summary>
+
+            <p class="mt-3 text-sm text-gray-500">
+              ข้อมูลจะเป็นรายงานใหม่ใต้หัวข้อนี้
+              ไม่เปิดงานเก่าที่เสร็จแล้วกลับมา
+            </p>
+
+            <form
+              method="POST"
+              action="/user/issues/<%= t.id %>/support"
+              class="mt-4 flex flex-col gap-3">
+
+              <input type="hidden"
+                     name="_csrf"
+                     value="<%= aiCsrf %>">
+
+              <%- include("../partials/location-fields", {
+                placeValues: t.locationInfo,
+                FACULTIES,
+                studentScope
+              }) %>
+
+              <label>
+                วันเวลาที่พบ
+
+                <input type="datetime-local"
+                       name="occurredAt"
+                       required
+                       class="border rounded-lg p-3">
+              </label>
+
+              <textarea
+                name="detail"
+                required
+                maxlength="2000"
+                rows="3"
+                placeholder="รายละเอียดเพิ่มเติม"
+                class="border rounded-lg p-3"
+              ></textarea>
+
+              <button class="self-start bg-[#F6A85A]
+                             rounded-full px-6 py-2">
+                ส่งรายงาน
+              </button>
+            </form>
+          </details>
+
+        </article>
+      <% }) %>
+
+    </section>
+  </main>
+</div>
+
+</body>
+</html>

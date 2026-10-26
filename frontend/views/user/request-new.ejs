@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>KIDHEN | <%= title %></title>
+
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+
+<body class="bg-[#EEEDEA]">
+<%
+  // แก้: คืนค่าที่ผู้ใช้กรอก เมื่อ backend ตรวจพบข้อผิดพลาด
+  const formValues = values || {};
+
+  // แก้: รับตัวเลือกคณะจาก backend
+  // มีเฉพาะคณะตัวเองและพื้นที่ส่วนกลาง
+  const allowedFaculties = studentScope.choices;
+%>
+
+<div class="flex min-h-screen">
+  <%- include("../partials/sidebar-user") %>
+
+  <main class="flex-1">
+    <%- include("../partials/topbar") %>
+
+    <section class="p-4">
+      <div class="bg-white p-6 min-h-[640px]">
+
+        <a
+          href="/user/home"
+          class="inline-block rounded-full bg-[#F6A85A] px-4 py-2"
+        >
+          ย้อนกลับ
+        </a>
+
+        <form
+          id="requestForm"
+          method="POST"
+          action="/user/requests/new"
+          enctype="multipart/form-data"
+          class="max-w-[600px] mx-auto flex flex-col gap-4 mt-4"
+        >
+
+          <% if (error) { %>
+            <p
+              role="alert"
+              class="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2"
+            >
+              <%= error %>
+            </p>
+          <% } %>
+
+          <!-- ประเภทคำร้อง -->
+          <div>
+            <label
+              for="type"
+              class="block font-bold text-[#1F2A8A] mb-1"
+            >
+              ประเภทคำร้อง *
+            </label>
+
+            <select
+              id="type"
+              name="type"
+              required
+              class="w-full h-10 px-3 rounded-md border border-gray-500 bg-white"
+            >
+              <option
+                value=""
+                disabled
+                <%= formValues.type ? "" : "selected" %>
+              >
+                เลือกประเภทคำร้อง
+              </option>
+
+              <% TYPES.forEach(type => { %>
+                <option
+                  value="<%= type %>"
+                  <%= formValues.type === type ? "selected" : "" %>
+                >
+                  <%= type %>
+                </option>
+              <% }) %>
+            </select>
+          </div>
+
+          <!-- หัวข้อคำร้อง -->
+          <div>
+            <label
+              for="title"
+              class="block font-bold text-[#1F2A8A] mb-1"
+            >
+              หัวข้อ *
+            </label>
+
+            <input
+              id="title"
+              name="title"
+              required
+              maxlength="200"
+              value="<%= formValues.title || '' %>"
+              placeholder="เช่น เก้าอี้ห้อง 306 ชำรุด"
+              class="w-full h-10 px-3 rounded-md border border-gray-500"
+            >
+          </div>
+
+          <!-- แก้: แทนช่อง location เดิมด้วยข้อมูลสถานที่แยกช่อง -->
+          <fieldset class="border border-gray-300 rounded-lg p-4">
+
+            <legend class="font-bold text-[#1F2A8A] px-2">
+              สถานที่เกิดปัญหา
+            </legend>
+
+            <!-- เพิ่ม: เลือกคณะตัวเองหรือพื้นที่ส่วนกลาง -->
+            <div>
+              <label
+                for="facultyId"
+                class="block font-bold text-[#1F2A8A] mb-1"
+              >
+                คณะ / พื้นที่ *
+              </label>
+
+              <select
+                id="facultyId"
+                name="facultyId"
+                required
+                class="w-full h-10 px-3 rounded-md border border-gray-500 bg-white"
+              >
+                <% allowedFaculties.forEach(faculty => { %>
+                  <option
+                    value="<%= faculty.id %>"
+                    <%= formValues.facultyId === faculty.id ? "selected" : "" %>
+                  >
+                    <%= faculty.label %>
+                  </option>
+                <% }) %>
+              </select>
+
+              <!-- เพิ่ม: แสดงสังกัดจากบัญชี ไม่ให้พิมพ์คณะใหม่เอง -->
+              <p class="text-xs text-gray-500 mt-2">
+                บัญชีสังกัด: <%= studentScope.faculty.label %>
+                · แจ้งได้เฉพาะคณะตัวเองหรือพื้นที่ส่วนกลาง
+              </p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+
+              <!-- เพิ่ม: อาคาร -->
+              <div>
+                <label
+                  for="building"
+                  class="block font-bold text-[#1F2A8A] mb-1"
+                >
+                  อาคาร / ตึก
+                </label>
+
+                <input
+                  id="building"
+                  name="building"
+                  maxlength="100"
+                  value="<%= formValues.building || '' %>"
+                  placeholder="เช่น A หรืออาคารเรียนรวม"
+                  class="w-full h-10 px-3 rounded-md border border-gray-500"
+                >
+              </div>
+
+              <!-- เพิ่ม: ห้อง -->
+              <div>
+                <label
+                  for="room"
+                  class="block font-bold text-[#1F2A8A] mb-1"
+                >
+                  ห้อง
+                </label>
+
+                <input
+                  id="room"
+                  name="room"
+                  maxlength="100"
+                  value="<%= formValues.room || '' %>"
+                  placeholder="เช่น 306"
+                  class="w-full h-10 px-3 rounded-md border border-gray-500"
+                >
+              </div>
+
+            </div>
+
+            <!-- เพิ่ม: สำหรับจุดที่ไม่มีเลขห้อง หรือระบุตำแหน่งให้ชัดเจน -->
+            <div class="mt-4">
+              <label
+                for="placeDetail"
+                class="block font-bold text-[#1F2A8A] mb-1"
+              >
+                ตำแหน่งเพิ่มเติม
+              </label>
+
+              <input
+                id="placeDetail"
+                name="placeDetail"
+                maxlength="200"
+                value="<%= formValues.placeDetail || '' %>"
+                placeholder="เช่น ชั้น 3 หน้าลิฟต์ หรือลานจอดรถด้านหลัง"
+                class="w-full h-10 px-3 rounded-md border border-gray-500"
+              >
+            </div>
+
+            <!-- เพิ่ม: อธิบายวิธีกรอก โดยไม่กำหนดจำนวนอาคารของแต่ละคณะ -->
+            <p class="text-xs text-gray-500 mt-3">
+              หากคณะมีหลายอาคาร กรุณาระบุอาคารด้วย
+              หากมีอาคารเดียวสามารถกรอกเฉพาะห้องได้
+              ต้องกรอกอย่างน้อยหนึ่งช่อง:
+              อาคาร ห้อง หรือตำแหน่งเพิ่มเติม
+            </p>
+
+          </fieldset>
+
+          <!-- รายละเอียดคำร้อง -->
+          <div>
+            <label
+              for="detail"
+              class="block font-bold text-[#1F2A8A] mb-1"
+            >
+              รายละเอียด *
+            </label>
+
+            <textarea
+              id="detail"
+              name="detail"
+              rows="5"
+              required
+              maxlength="5000"
+              placeholder="อธิบายปัญหา อาการ และช่วงเวลาที่พบ"
+              class="w-full px-3 py-2 rounded-md border border-gray-500"
+            ><%= formValues.detail || '' %></textarea>
+          </div>
+
+          <!-- รูปภาพประกอบ -->
+          <div>
+            <label
+              for="images"
+              class="block font-bold text-[#1F2A8A] mb-1"
+            >
+              รูปภาพแนบ
+              <span class="font-normal text-xs text-gray-500">
+                (ไม่บังคับ สูงสุด 3 รูป รูปละไม่เกิน 5 MB)
+              </span>
+            </label>
+
+            <input id="images" name="images" type="file" accept="image/*" multiple
+       class="block w-full text-sm text-gray-500
+              file:mr-4 file:h-10 file:px-5 file:rounded-lg file:border-0
+              file:bg-[#1F2A8A] file:text-white file:text-sm file:font-semibold
+              file:cursor-pointer hover:file:bg-[#18226F]">
+
+            <div
+              id="previews"
+              class="flex flex-wrap gap-3 mt-3"
+            ></div>
+
+            <p
+              id="imageError"
+              role="alert"
+              class="text-sm text-red-600 mt-2"
+            ></p>
+          </div>
+
+          <div class="flex justify-end gap-4 mt-4">
+            <button
+              type="reset"
+              class="px-6 py-2 rounded-full border border-black bg-[#D9D9D9]"
+            >
+              ล้างข้อมูล
+            </button>
+
+            <button
+              type="submit"
+              class="px-6 py-2 rounded-full border border-black bg-[#F6A85A]"
+            >
+              ส่งคำร้อง
+            </button>
+          </div>
+
+        </form>
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  const form = document.getElementById("requestForm");
+  const images = document.getElementById("images");
+  const previews = document.getElementById("previews");
+  const imageError = document.getElementById("imageError");
+
+  // เพิ่ม: ช่องสถานที่ที่ต้องกรอกอย่างน้อยหนึ่งช่อง
+  const placeFields = [
+    "building",
+    "room",
+    "placeDetail",
+  ].map(id => document.getElementById(id));
+
+  let previewUrls = [];
+
+  // แก้: ล้างรูปตัวอย่างและคืนหน่วยความจำ
+  function clearPreviews() {
+    previewUrls.forEach(url => URL.revokeObjectURL(url));
+    previewUrls = [];
+
+    previews.replaceChildren();
+    imageError.textContent = "";
+  }
+
+  // ตรวจและแสดงรูปภาพที่เลือก
+  images.addEventListener("change", () => {
+    clearPreviews();
+
+    const files = Array.from(images.files);
+
+    const invalidFiles = files.some(file =>
+      file.size > 5 * 1024 * 1024 ||
+      !file.type.startsWith("image/")
+    );
+
+    if (files.length > 3 || invalidFiles) {
+      imageError.textContent =
+        "เลือกรูปภาพได้สูงสุด 3 รูป และรูปละไม่เกิน 5 MB";
+
+      images.value = "";
+      return;
+    }
+
+    files.forEach(file => {
+      const url = URL.createObjectURL(file);
+      previewUrls.push(url);
+
+      const img = document.createElement("img");
+
+      img.src = url;
+      img.alt = file.name;
+      img.className =
+        "w-24 h-24 rounded-lg object-cover border";
+
+      previews.appendChild(img);
+    });
+  });
+
+  // เพิ่ม: ล้างข้อความเตือน เมื่อแก้ข้อมูลสถานที่
+  placeFields.forEach(field => {
+    field.addEventListener("input", () => {
+      placeFields[0].setCustomValidity("");
+    });
+  });
+
+  // เพิ่ม: ตรวจสถานที่ก่อนส่ง
+  // backend ยังคงตรวจสิทธิ์คณะและความถูกต้องซ้ำอีกครั้ง
+  form.addEventListener("submit", event => {
+    const hasLocation = placeFields.some(field =>
+      field.value.trim()
+    );
+
+    if (!hasLocation) {
+      event.preventDefault();
+
+      placeFields[0].setCustomValidity(
+        "กรอกอาคาร ห้อง หรือตำแหน่งเพิ่มเติมอย่างน้อยหนึ่งช่อง"
+      );
+
+      placeFields[0].reportValidity();
+    }
+  });
+
+  // แก้: ล้างรูปและข้อความเตือนเมื่อกดล้างข้อมูล
+  form.addEventListener("reset", () => {
+    clearPreviews();
+    placeFields[0].setCustomValidity("");
+  });
+</script>
+</body>
+</html>

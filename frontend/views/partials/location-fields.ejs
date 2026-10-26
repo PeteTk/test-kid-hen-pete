@@ -1,0 +1,102 @@
+<!-- แก้: ฟอร์มนักศึกษาเลือกได้เฉพาะคณะตัวเองและส่วนกลาง -->
+
+<%
+  const p = placeValues || {};
+
+  // เพิ่ม: มี studentScope เฉพาะฝั่งนักศึกษา
+  const student =
+    typeof studentScope !== "undefined"
+      ? studentScope
+      : null;
+%>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+  <label class="block font-semibold text-[#1F2A8A]">
+    คณะ/พื้นที่
+    <span class="text-red-600">*</span>
+
+    <select
+      name="facultyId"
+      required
+      class="mt-2 w-full border rounded-lg bg-white p-3">
+
+      <option value="">เลือกคณะ/พื้นที่</option>
+
+      <% FACULTIES.forEach(f => { %>
+        <option
+          value="<%= f.id %>"
+          <%= p.facultyId === f.id
+            ? "selected" : "" %>>
+          <%= f.label %>
+        </option>
+      <% }) %>
+    </select>
+  </label>
+
+  <% if (student) { %>
+
+    <!-- เพิ่ม: แสดงคณะจากบัญชี ไม่ให้พิมพ์เปลี่ยนเอง -->
+    <p class="text-sm text-gray-500 mt-2">
+      บัญชีสังกัด:
+      <%= student.faculty.label %>
+      · แจ้งได้เฉพาะคณะตัวเองหรือส่วนกลาง
+    </p>
+
+  <% } else { %>
+    <!-- แก้ (3c): ตัดช่อง "ชื่อคณะอื่น" (ตกลงใน 3a: 99 = คณะ/พื้นที่อื่น ใช้เป็นตัวแทน) -->
+    <span></span>
+  <% } %>
+
+  <label class="block font-semibold text-[#1F2A8A]">
+    อาคาร
+    <span class="font-normal text-gray-500">
+      (ถ้ามี)
+    </span>
+
+    <input
+      name="building"
+      value="<%= p.building || '' %>"
+      maxlength="100"
+      placeholder="เช่น A, ตึก A หรืออาคารเรียนรวม"
+      class="mt-2 w-full border rounded-lg p-3">
+  </label>
+
+  <label class="block font-semibold text-[#1F2A8A]">
+    ห้อง
+    <span class="font-normal text-gray-500">
+      (ถ้ามี)
+    </span>
+
+    <input
+      name="room"
+      value="<%= p.room || '' %>"
+      maxlength="100"
+      placeholder="เช่น 203 หรือห้อง 203"
+      class="mt-2 w-full border rounded-lg p-3">
+  </label>
+
+</div>
+
+<p class="text-xs text-gray-500 mt-2">
+  หากคณะมีหลายอาคาร กรุณาระบุชื่อหรือรหัสอาคาร
+  หากมีอาคารเดียว สามารถกรอกเฉพาะห้องได้
+  ระบบไม่ตรวจจำนวนอาคารของแต่ละคณะ
+</p>
+
+<label class="block font-semibold text-[#1F2A8A] mt-3">
+  รายละเอียดตำแหน่งเพิ่มเติม
+
+  <input
+    name="placeDetail"
+    value="<%= p.placeDetail || '' %>"
+    maxlength="200"
+    placeholder="เช่น ชั้น 2 ข้างบันได / ลานจอดรถด้านหลัง"
+    class="mt-2 w-full border rounded-lg p-3">
+</label>
+
+<p class="text-xs text-gray-500 mt-2">
+  ถ้าไม่มีห้อง เช่น ทางเดินหรือลานจอดรถ
+  ให้ระบุรายละเอียดตำแหน่งแทน
+  ไม่ใส่ชื่อบุคคลหรือเบอร์โทรในช่องสถานที่
+</p>

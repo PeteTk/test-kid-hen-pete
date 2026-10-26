@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIDHEN | แก้ไขข้อมูลผู้ใช้</title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+<body class="bg-[#EEEDEA]">
+  <%
+    const ROLE_LABEL = { ADMIN: "Admin", STAFF: "Staff", USER: "User" };
+    // แก้ (3b-2): id เป็น UUID จาก DB, units = [{ faculty_id, department_id }]
+    const isSelf = target.id === currentUser.id;
+    const units = target.units && target.units.length
+      ? target.units
+      : [{ faculty_id: "", department_id: "" }];
+    const inputClass = "w-full h-10 px-4 rounded-lg border border-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-[#1F2A8A]";
+    const readonlyClass = "w-full h-10 px-4 rounded-lg border border-gray-500 bg-[#D9D9D9] text-sm text-gray-600 cursor-not-allowed";
+  %>
+
+  <div class="flex min-h-screen">
+    <%- include("../partials/sidebar-admin") %>
+
+    <main class="flex-1">
+      <%- include("../partials/topbar") %>
+
+      <section class="p-4">
+        <div class="bg-white p-6 min-h-[660px] flex flex-col">
+
+          <!-- ปุ่มย้อนกลับ -->
+          <a href="/admin/users" title="ย้อนกลับ"
+             class="w-9 h-9 rounded-full bg-[#F6A85A] flex items-center justify-center hover:opacity-80">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="black"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7" />
+            </svg>
+          </a>
+
+          <!-- หัวข้อและปุ่มลบ -->
+          <div class="flex items-center justify-between mt-2 pb-3 border-b-4 border-[#EEEDEA]">
+            <h2 class="text-xl font-bold text-[#1F2A8A]">แก้ไขข้อมูลผู้ใช้</h2>
+            <% if (!isSelf) { %>
+              <button type="submit" form="deleteForm"
+                      class="px-5 py-1 rounded-md bg-[#FDDCDC] text-[#E01E1E] text-xs font-semibold hover:bg-[#FBC6C6]">
+                ลบ
+              </button>
+            <% } %>
+          </div>
+
+          <h3 class="mt-4 text-lg font-bold">
+            <%= target.name %>
+            <span class="text-gray-500 font-semibold text-sm">#<%= String(target.id).slice(0, 8) %></span>
+          </h3>
+
+          <% if (saved) { %>
+            <p class="mt-3 text-sm text-[#3A8A12] bg-[#E3FBD2] border border-[#8BDA5B] rounded-lg px-4 py-2">
+              ✓ บันทึกข้อมูลเรียบร้อยแล้ว
+            </p>
+          <% } %>
+
+          <% if (error) { %>
+            <p class="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">
+              <%= error %>
+            </p>
+          <% } %>
+
+          <form id="editForm" method="POST" action="/admin/users/<%= target.id %>"
+                enctype="multipart/form-data" class="flex-1 flex flex-col">
+
+            <!-- รูป + ฟอร์ม: จัดกึ่งกลาง กว้างไม่เกิน 900px -->
+            <div class="flex flex-col md:flex-row gap-12 mt-8 w-full max-w-[900px] mx-auto">
+
+              <!-- รูปโปรไฟล์ -->
+              <div class="flex flex-col items-center gap-4 md:w-[280px] shrink-0">
+                <div class="w-[170px] h-[170px] rounded-full bg-[#B3B3B3] overflow-hidden flex items-center justify-center">
+                  <img id="avatarPreview" <%- target.avatar ? `src="${target.avatar}"` : "" %> alt="รูปโปรไฟล์"
+                       class="w-full h-full object-cover <%= target.avatar ? '' : 'hidden' %>">
+                  <svg id="avatarPlaceholder" width="85" height="94" viewBox="0 0 100 110" fill="white"
+                       class="<%= target.avatar ? 'hidden' : '' %>">
+                    <circle cx="50" cy="30" r="28" />
+                    <path d="M2 110a48 40 0 0 1 96 0z" />
+                  </svg>
+                </div>
+                <label for="avatar"
+                       class="px-6 py-1 rounded-lg bg-[#E6ECF5] text-xs font-semibold text-[#1F2A8A] cursor-pointer hover:bg-[#D6DFEE]">
+                  เปลี่ยนรูปโปรไฟล์
+                </label>
+                <input id="avatar" name="avatar" type="file" accept="image/*" class="hidden">
+                <p class="text-xs text-gray-400">ไฟล์รูป ไม่เกิน 2MB</p>
+              </div>
+
+              <!-- ข้อมูลผู้ใช้ -->
+              <div class="flex-1 flex flex-col gap-5">
+
+                <!-- แก้ (3b-2): ชื่อ-นามสกุล ช่องเดียว -->
+                <div>
+                  <label for="name" class="block text-xs font-semibold mb-1">ชื่อ-นามสกุล</label>
+                  <input id="name" name="name" type="text" required maxlength="150"
+                         value="<%= target.name %>" class="<%= inputClass %>">
+                </div>
+
+                <!-- อีเมล -->
+                <div>
+                  <label class="block text-xs font-semibold mb-1">อีเมล</label>
+                  <input type="text" readonly value="<%= target.email %>" class="<%= readonlyClass %>">
+                </div>
+
+                <!-- คณะ / ฝ่าย -->
+                <div>
+                  <div class="grid grid-cols-2 gap-6 mb-1">
+                    <span class="text-xs font-semibold">คณะ</span>
+                    <span class="text-xs font-semibold">ฝ่าย</span>
+                  </div>
+
+                  <% if (autoFaculty) { %>
+                    <!-- นักศึกษา: คณะกำหนดอัตโนมัติจากรหัส -->
+                    <div class="grid grid-cols-2 gap-6">
+                      <input type="text" readonly
+                             value="<%= autoFaculty.id %> <%= autoFaculty.name %>"
+                             class="<%= readonlyClass %>">
+                      <input type="text" readonly value="กิจการนักศึกษา" class="<%= readonlyClass %>">
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">ระบุคณะอัตโนมัติจากรหัสนักศึกษา</p>
+
+                  <% } else { %>
+                    <!-- เจ้าหน้าที่: เพิ่มคณะ / ฝ่ายได้หลายคู่ -->
+                    <div id="units" class="flex flex-col gap-3">
+                      <% units.forEach((u, i) => { %>
+                        <div class="unit-row relative grid grid-cols-2 gap-6">
+                          <select name="faculty[]" class="<%= inputClass %> bg-white">
+                            <option value="">เลือกคณะ</option>
+                            <% FACULTIES.forEach(f => { %>
+                              <option value="<%= f.id %>" <%= u.faculty_id === f.id ? 'selected' : '' %>>
+                                <%= f.id %> <%= f.name %>
+                              </option>
+                            <% }) %>
+                          </select>
+
+                          <select name="department[]" class="<%= inputClass %> bg-white">
+                            <option value="">เลือกฝ่าย</option>
+                            <% DEPARTMENTS.forEach(d => { %>
+                              <option value="<%= d.id %>" <%= u.department_id === d.id ? 'selected' : '' %>><%= d.name %></option>
+                            <% }) %>
+                          </select>
+
+                          <% if (i > 0) { %>
+                            <button type="button" onclick="this.parentElement.remove()" title="ลบแถวนี้"
+                                    class="absolute -right-8 top-2 w-6 h-6 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-600">
+                              ✕
+                            </button>
+                          <% } %>
+                        </div>
+                      <% }) %>
+                    </div>
+
+                    <button type="button" id="addUnit"
+                            class="mt-3 px-3 py-0.5 rounded-full bg-[#E2E2E2] text-xs font-semibold hover:bg-[#D2D2D2]">
+                      เพิ่ม +
+                    </button>
+                  <% } %>
+                </div>
+
+                <!-- บทบาท -->
+                <div class="w-1/2 pr-3">
+                  <label for="role" class="block text-xs font-semibold mb-1">บทบาท</label>
+                  <select id="role" name="role" class="<%= inputClass %> bg-white">
+                    <% ROLES.forEach(r => { %>
+                      <option value="<%= r %>" <%= target.role === r ? 'selected' : '' %>><%= ROLE_LABEL[r] %></option>
+                    <% }) %>
+                  </select>
+                  <% if (isSelf) { %>
+                    <p class="text-xs text-gray-400 mt-1">บัญชีของคุณเอง ไม่สามารถลดบทบาทได้</p>
+                  <% } else { %>
+                    <p class="text-xs text-gray-400 mt-1">เปลี่ยนบทบาทแล้วให้บันทึกก่อน จึงจะแก้คณะ/ฝ่ายตามบทบาทใหม่ได้</p>
+                  <% } %>
+                </div>
+              </div>
+            </div>
+
+            <!-- ปุ่มบันทึกและยกเลิก -->
+            <div class="mt-auto pt-10 flex justify-end gap-6">
+              <a href="/admin/users"
+                 class="w-[150px] h-10 rounded-full border border-black bg-[#D9D9D9] font-bold flex items-center justify-center hover:bg-[#C9C9C9]">
+                ยกเลิก
+              </a>
+              <button type="submit"
+                      class="w-[150px] h-10 rounded-full border border-black bg-[#F6A85A] font-bold hover:bg-[#F39A3E]">
+                บันทึกข้อมูล
+              </button>
+            </div>
+          </form>
+
+          <!-- ฟอร์มลบ แยกจากฟอร์มแก้ไข เพราะ HTML ไม่รองรับฟอร์มซ้อนกัน -->
+          <form id="deleteForm" method="POST" action="/admin/users/<%= target.id %>/delete"
+                onsubmit="return confirm('ต้องการลบผู้ใช้ &quot;<%= target.name %>&quot; ใช่หรือไม่?')">
+          </form>
+
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // ตัวอย่างรูปโปรไฟล์ใหม่ (ยังไม่บันทึกจนกว่าจะกด บันทึกข้อมูล)
+    const avatarInput = document.getElementById("avatar");
+    avatarInput.addEventListener("change", () => {
+      const file = avatarInput.files[0];
+      if (!file) return;
+      if (file.size > 2 * 1024 * 1024) {
+        alert("รูปต้องไม่เกิน 2MB");
+        avatarInput.value = "";
+        return;
+      }
+      const preview = document.getElementById("avatarPreview");
+      preview.src = URL.createObjectURL(file);
+      preview.classList.remove("hidden");
+      document.getElementById("avatarPlaceholder").classList.add("hidden");
+    });
+
+    // ปุ่ม เพิ่ม + : คัดลอกแถวแรก ล้างค่า แล้วเพิ่มปุ่ม ✕
+    const addUnitBtn = document.getElementById("addUnit");
+    if (addUnitBtn) {
+      addUnitBtn.addEventListener("click", () => {
+        const units = document.getElementById("units");
+        const firstRow = units.querySelector(".unit-row");
+        if (!firstRow) return;
+
+        const row = firstRow.cloneNode(true);
+        row.querySelectorAll("select").forEach((select) => (select.selectedIndex = 0));
+        row.querySelector("button")?.remove();
+
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.title = "ลบแถวนี้";
+        removeBtn.textContent = "✕";
+        removeBtn.className = "absolute -right-8 top-2 w-6 h-6 rounded-full text-gray-400 hover:bg-red-50 hover:text-red-600";
+        removeBtn.addEventListener("click", () => row.remove());
+        row.appendChild(removeBtn);
+
+        units.appendChild(row);
+      });
+    }
+  </script>
+</body>
+</html>

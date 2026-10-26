@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIDHEN | คำร้อง <%= item.code %></title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+<body class="bg-[#EEEDEA]">
+
+<%
+  const STEP_COLOR = {
+    done:    "bg-[#1F2A8A]",
+    current: "bg-[#F6A85A]",
+    todo:    "bg-[#D9D9D9]",
+  };
+%>
+
+<div class="flex min-h-screen">
+  <%- include("../partials/sidebar-user") %>
+
+  <main class="flex-1">
+    <%- include("../partials/topbar") %>
+
+    <section class="p-4">
+      <div class="bg-white p-6 min-h-[660px]">
+
+        <!-- ปุ่มย้อนกลับ -->
+        <a href="/user/requests" title="ย้อนกลับ"
+           class="w-9 h-9 rounded-full bg-[#F6A85A] flex items-center justify-center hover:opacity-80">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </a>
+
+        <!-- หัวข้อ + สถานะ -->
+        <div class="flex flex-wrap items-center justify-between gap-4 mt-2 pb-3 border-b-4 border-[#EEEDEA]">
+          <h2 class="text-xl font-bold text-[#1F2A8A]">รายละเอียดคำร้อง</h2>
+          <div class="flex items-center gap-3">
+            <span class="text-sm text-gray-500">สถานะ</span>
+            <%- include("../partials/status-badge", { status: item.status }) %>
+          </div>
+        </div>
+
+        <!-- ข้อมูลคำร้อง -->
+        <div class="grid grid-cols-3 gap-4 max-w-[520px] mt-6 text-sm">
+          <div>
+            <p class="text-gray-500 mb-1">หมายเลขคำร้อง</p>
+            <p class="font-semibold"><%= item.code %></p>
+          </div>
+          <div>
+            <p class="text-gray-500 mb-1">ประเภท</p>
+            <p class="font-semibold"><%= item.type %></p>
+          </div>
+          <div>
+            <p class="text-gray-500 mb-1">วันที่แจ้ง</p>
+            <p class="font-semibold"><%= item.date %></p>
+          </div>
+        </div>
+
+        <div class="mt-8 text-sm">
+          <p class="text-gray-500 mb-1">หัวข้อ</p>
+          <p class="font-semibold"><%= item.title %></p>
+        </div>
+
+        <div class="mt-4 text-sm">
+          <p class="text-gray-500 mb-1">สถานที่</p>
+          <p class="font-semibold"><%= item.location || "-" %></p>
+        </div>
+
+        <div class="mt-4 text-sm">
+          <p class="text-gray-500 mb-1">รายละเอียด</p>
+          <p class="font-semibold"><%= item.detail %></p>
+        </div>
+
+        <!-- รูปภาพแนบ: มีก็แสดง ไม่มีปล่อยว่าง -->
+        <div class="mt-6 pb-4 border-b-4 border-[#EEEDEA]">
+          <p class="text-sm text-gray-500 mb-2">รูปภาพแนบ</p>
+          <div class="flex flex-wrap gap-6 min-h-[124px]">
+            <% (item.images || []).forEach(src => { %>
+              <a href="<%= src %>" target="_blank">
+                <img src="<%= src %>" alt="รูปแนบ" class="w-[124px] h-[124px] object-cover rounded-lg bg-gray-100 hover:opacity-80">
+              </a>
+            <% }) %>
+          </div>
+        </div>
+
+        <!-- ข้อความจากเจ้าหน้าที่ -->
+        <% if (item.note) { %>
+          <div class="mt-4 pb-4 border-b-4 border-[#EEEDEA]">
+            <p class="text-sm text-gray-500 mb-2">ข้อความจากเจ้าหน้าที่</p>
+            <p class="text-sm bg-[#FDF1EA] rounded-lg px-4 py-3"><%= item.note %></p>
+          </div>
+        <% } %>
+
+        <!-- ประวัติการดำเนินการ -->
+        <div class="mt-4">
+          <p class="text-sm text-gray-500">ประวัติการดำเนินการ</p>
+
+          <div class="relative mt-6">
+            <div class="absolute left-[16.666%] right-[16.666%] top-[48px] h-2 rounded bg-[#D9D9D9]"></div>
+            <div class="absolute left-[16.666%] top-[48px] h-2 rounded bg-[#1F2A8A]"
+                 style="width: <%= Math.max(current, 0) * 33.333 %>%"></div>
+
+            <div class="relative grid grid-cols-3">
+              <% steps.forEach(s => { %>
+                <div class="flex flex-col items-center text-center">
+                  <p class="text-sm font-semibold h-5 mb-3"><%= s.label %></p>
+                  <div class="w-10 h-10 rounded-full <%= STEP_COLOR[s.state] %>"></div>
+                  <p class="text-xs text-gray-500 h-4 mt-3"><%= s.time %></p>
+                </div>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

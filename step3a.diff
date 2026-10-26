@@ -1,0 +1,369 @@
+diff -ruN a/backend/db.js b/backend/db.js
+--- a/backend/db.js	2026-10-26 12:35:21.280664672 +0000
++++ b/backend/db.js	2026-10-26 12:35:42.604508884 +0000
+@@ -260,7 +260,11 @@
+     "15": "คณะแพทยศาสตร์",
+     "16": "วิทยาลัยศิลปกรรมศาสตร์",
+     "17": "คณะทันตแพทยศาสตร์",
+-    "22": "คณะพยาบาลศาสตร์"
++    "21": "โคเซ็น",
++    "22": "คณะพยาบาลศาสตร์",
++    // เพิ่ม: ตัวแทนสำหรับตัวเลือกบนฟอร์มคำร้อง (tickets.faculty_id เป็น NOT NULL + FK)
++    "00": "พื้นที่ส่วนกลาง",
++    "99": "คณะ/พื้นที่อื่น"
+   };
+ 
+   for (const [facultyId, name] of Object.entries(faculties)) {
+diff -ruN a/backend/repo/users.js b/backend/repo/users.js
+--- a/backend/repo/users.js	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/repo/users.js	2026-10-26 12:36:04.983889392 +0000
+@@ -0,0 +1,204 @@
++// repo/users.js — ชั้นเข้าถึงข้อมูลผู้ใช้ใน DB (SQLite ในเครื่อง / MySQL บน AWS)
++// ใช้แทน data/mockUsers.js ทีละโมดูลในขั้น 3b (ไฟล์ mock เดิมยังไม่ถูกแตะ)
++
++const db = require("../db");
++
++const ROLES = ["ADMIN", "STAFF", "USER"];
++
++// รหัสพิเศษใน faculties ที่ไม่ใช่คณะจริง
++const COMMON_FACULTY = "00";
++const OTHER_FACULTY = "99";
++
++// ดึงรหัสนักศึกษา 8 หลักจากอีเมล เช่น 67070223@kmitl.ac.th → "67070223"
++function studentIdFromEmail(email) {
++  const local = String(email || "").split("@")[0];
++  return /^\d{8}$/.test(local) ? local : null;
++}
++
++// รหัสนักศึกษารูปแบบ 6y[xx]yyyy → รหัสคณะ 2 หลัก (ตัวเดียวกับ db.studentClaims)
++function facultyIdFromStudentId(studentId) {
++  return /^\d{8}$/.test(studentId || "") ? studentId.slice(2, 4) : null;
++}
++
++// คืนรหัสคณะเฉพาะที่มีอยู่จริงใน DB และไม่ใช่ 00/99 ไม่เช่นนั้นคืน null
++async function facultyFromStudentId(studentId) {
++  const id = facultyIdFromStudentId(studentId);
++  if (!id || id === COMMON_FACULTY || id === OTHER_FACULTY) return null;
++
++  const rows = await db.query(
++    "SELECT id, name FROM faculties WHERE id=?",
++    [id]
++  );
++  return rows[0] || null;
++}
++
++async function listFaculties() {
++  return db.query("SELECT id, name FROM faculties ORDER BY id");
++}
++
++async function listDepartments() {
++  return db.query("SELECT id, name FROM departments ORDER BY name");
++}
++
++// แนบ units (คู่ คณะ+หน่วยงาน) ให้ผู้ใช้
++async function withUnits(user, run = db.query) {
++  if (!user) return null;
++
++  let units = [];
++
++  if (user.role === "USER") {
++    // นักศึกษา: ใช้คณะจากบัญชี + หน่วยงาน student
++    if (user.faculty_id) {
++      units = [{ faculty_id: user.faculty_id, department_id: "student" }];
++    }
++  } else {
++    const rows = await run(
++      "SELECT faculty_id, department_id FROM user_units WHERE user_id=? " +
++        "ORDER BY faculty_id, department_id",
++      [user.id]
++    );
++
++    // แปลงเป็น object ธรรมดา ให้ SQLite กับ MySQL หน้าตาเหมือนกัน
++    units = rows.map((r) => ({
++      faculty_id: r.faculty_id,
++      department_id: r.department_id,
++    }));
++  }
++
++  return { ...user, units };
++}
++
++async function findById(id) {
++  const rows = await db.query("SELECT * FROM users WHERE id=?", [id]);
++  return withUnits(rows[0]);
++}
++
++async function findByEmail(email) {
++  const rows = await db.query(
++    "SELECT * FROM users WHERE email=?",
++    [String(email || "").trim().toLowerCase()]
++  );
++  return withUnits(rows[0]);
++}
++
++async function list() {
++  const rows = await db.query("SELECT * FROM users ORDER BY created_at, email");
++  return Promise.all(rows.map((row) => withUnits(row)));
++}
++
++// สร้างผู้ใช้ — นักศึกษา: คณะมาจากรหัสในอีเมลเสมอ ไม่รับค่าจากภายนอก
++async function create({ email, name, role = "USER", googleSub = null, passwordHash = null }) {
++  if (!ROLES.includes(role)) db.fail("role ไม่ถูกต้อง");
++
++  const cleanEmail = String(email || "").trim().toLowerCase();
++  if (!cleanEmail) db.fail("ต้องมีอีเมล");
++
++  const cleanName = db.text(name, 1, 150, "ชื่อ");
++
++  let studentId = null;
++  let facultyId = null;
++  let departmentId = null;
++
++  if (role === "USER") {
++    studentId = studentIdFromEmail(cleanEmail);
++    const faculty = await facultyFromStudentId(studentId);
++    facultyId = faculty ? faculty.id : null;
++    departmentId = "student";
++  }
++
++  const userId = db.id();
++
++  await db.query(
++    "INSERT INTO users(id,email,name,google_sub,student_id,faculty_id," +
++      "department_id,role,password_hash,active,created_at) VALUES(?,?,?,?,?,?,?,?,?,1,?)",
++    [userId, cleanEmail, cleanName, googleSub, studentId, facultyId,
++     departmentId, role, passwordHash, db.now()]
++  );
++
++  return findById(userId);
++}
++
++// แก้ชื่อ / role / active (แก้คณะนักศึกษาไม่ได้ ต้องมาจากรหัส)
++async function update(userId, { name, role, active } = {}) {
++  const current = await findById(userId);
++  if (!current) db.fail("ไม่พบผู้ใช้", 404);
++
++  const nextRole = role ?? current.role;
++  if (!ROLES.includes(nextRole)) db.fail("role ไม่ถูกต้อง");
++
++  const nextName = name === undefined ? current.name : db.text(name, 1, 150, "ชื่อ");
++  const nextActive = active === undefined ? current.active : active ? 1 : 0;
++
++  await db.transaction(async (run) => {
++    await run(
++      "UPDATE users SET name=?, role=?, active=? WHERE id=?",
++      [nextName, nextRole, nextActive, userId]
++    );
++
++    // เปลี่ยนมาเป็นนักศึกษา: ไม่ใช้ units ของ Staff แล้ว
++    if (nextRole === "USER") {
++      await run("DELETE FROM user_units WHERE user_id=?", [userId]);
++    }
++  });
++
++  return findById(userId);
++}
++
++// กำหนดคู่ คณะ+หน่วยงาน ของ Staff/Admin ทั้งชุด (แทนที่ของเดิม ซ้ำให้เหลือคู่เดียว)
++// ตรวจกับ faculties/departments ใน DB ก่อนบันทึก
++async function setUnits(userId, units) {
++  const user = await findById(userId);
++  if (!user) db.fail("ไม่พบผู้ใช้", 404);
++  if (user.role === "USER") db.fail("นักศึกษาไม่ใช้ units คณะมาจากรหัสนักศึกษา");
++
++  const faculties = new Set((await listFaculties()).map((f) => f.id));
++  const departments = new Set((await listDepartments()).map((d) => d.id));
++
++  const seen = new Set();
++  const clean = [];
++
++  for (const unit of units || []) {
++    const facultyId = String(unit?.faculty_id ?? "").trim();
++    const departmentId = String(unit?.department_id ?? "").trim();
++
++    if (!faculties.has(facultyId)) db.fail(`ไม่พบคณะ ${facultyId}`);
++    if (!departments.has(departmentId)) db.fail(`ไม่พบหน่วยงาน ${departmentId}`);
++
++    const key = `${facultyId}|${departmentId}`;
++    if (!seen.has(key)) {
++      seen.add(key);
++      clean.push([facultyId, departmentId]);
++    }
++  }
++
++  await db.transaction(async (run) => {
++    await run("DELETE FROM user_units WHERE user_id=?", [userId]);
++
++    for (const [facultyId, departmentId] of clean) {
++      await run(
++        "INSERT INTO user_units(user_id,faculty_id,department_id) VALUES(?,?,?)",
++        [userId, facultyId, departmentId]
++      );
++    }
++  });
++
++  return findById(userId);
++}
++
++// Staff ที่ต้องแจ้งเมื่อมีคำร้อง: คณะ + หน่วยงานตรงกัน และบัญชียังใช้งานอยู่
++async function staffForTicket(facultyId, departmentId) {
++  return db.query(
++    "SELECT u.id, u.email, u.name FROM users u " +
++      "JOIN user_units x ON x.user_id = u.id " +
++      "WHERE u.role='STAFF' AND u.active=1 AND x.faculty_id=? AND x.department_id=? " +
++      "ORDER BY u.email",
++    [facultyId, departmentId]
++  );
++}
++
++module.exports = {
++  ROLES, COMMON_FACULTY, OTHER_FACULTY,
++  studentIdFromEmail, facultyIdFromStudentId, facultyFromStudentId,
++  listFaculties, listDepartments,
++  findById, findByEmail, list, create, update, setUnits, staffForTicket,
++};
+diff -ruN a/backend/schema.sql b/backend/schema.sql
+--- a/backend/schema.sql	2026-10-26 12:35:21.281026882 +0000
++++ b/backend/schema.sql	2026-10-26 12:35:42.604165381 +0000
+@@ -28,6 +28,18 @@
+   FOREIGN KEY (department_id) REFERENCES departments(id)
+ );
+ 
++-- เพิ่ม: คู่ คณะ + หน่วยงาน ที่ Staff/Admin รับผิดชอบ (ได้หลายคู่ตามที่ Admin กำหนด)
++-- นักศึกษาไม่ต้องมีแถวที่นี่ ใช้ users.faculty_id ที่คำนวณจากรหัสในอีเมล
++CREATE TABLE IF NOT EXISTS user_units (
++  user_id VARCHAR(36) NOT NULL,
++  faculty_id CHAR(2) NOT NULL,
++  department_id VARCHAR(36) NOT NULL,
++  PRIMARY KEY (user_id, faculty_id, department_id),
++  FOREIGN KEY (user_id) REFERENCES users(id),
++  FOREIGN KEY (faculty_id) REFERENCES faculties(id),
++  FOREIGN KEY (department_id) REFERENCES departments(id)
++);
++
+ -- เพิ่ม: Admin เปลี่ยนกฎส่งเรื่องได้โดยไม่แก้โค้ด
+ CREATE TABLE IF NOT EXISTS routing_rules (
+   id VARCHAR(36) PRIMARY KEY,
+diff -ruN a/backend/test/users.repo.test.js b/backend/test/users.repo.test.js
+--- a/backend/test/users.repo.test.js	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/test/users.repo.test.js	2026-10-26 12:35:59.233070159 +0000
+@@ -0,0 +1,119 @@
++// ทดสอบ repo/users.js บน SQLite ในหน่วยความจำ
++// รัน: SQLITE_PATH=:memory: node test/users.repo.test.js
++process.env.SQLITE_PATH = ":memory:";
++process.env.DB_DRIVER = "sqlite";
++
++const assert = require("node:assert/strict");
++const db = require("../db");
++const users = require("../repo/users");
++
++let passed = 0;
++async function check(name, fn) {
++  await fn();
++  passed++;
++  console.log("  ✓", name);
++}
++
++(async () => {
++  await db.init();
++  // init ซ้ำต้องไม่พัง (idempotent)
++  await db.init();
++
++  await check("faculties: 16 เดิม + 21 + 00 + 99 = 19 แถว, ไม่มี 015", async () => {
++    const f = await users.listFaculties();
++    assert.equal(f.length, 19);
++    const ids = f.map((x) => x.id);
++    for (const id of ["00", "21", "99", "01", "11", "12"]) assert.ok(ids.includes(id), id);
++    assert.ok(!ids.includes("015"));
++  });
++
++  await check("departments: 5 หน่วยงานครบ", async () => {
++    const d = (await users.listDepartments()).map((x) => x.id).sort();
++    assert.deepEqual(d, ["academic", "activities", "building", "it", "student"]);
++  });
++
++  await check("หาคณะจากรหัสนักศึกษา (07→IT, 01→วิศวะ, 21→โคเซ็น, 015 ไม่แยก)", async () => {
++    assert.equal((await users.facultyFromStudentId("67070223")).id, "07");
++    assert.equal((await users.facultyFromStudentId("67010888")).id, "01");
++    assert.equal((await users.facultyFromStudentId("67210001")).name, "โคเซ็น");
++    assert.equal((await users.facultyFromStudentId("67015123")).id, "01");
++    assert.equal(await users.facultyFromStudentId("67990001"), null); // 99 ไม่ใช่คณะจริง
++    assert.equal(await users.facultyFromStudentId("67090001"), null); // 09 ไม่มี
++    assert.equal(await users.facultyFromStudentId("abc"), null);
++  });
++
++  let student, staff, admin;
++
++  await check("สร้างนักศึกษา: คณะ/รหัสมาจากอีเมล, units = คณะ + student", async () => {
++    student = await users.create({ email: "67070223@kmitl.ac.th", name: "สมหญิง เรียนดี" });
++    assert.equal(student.student_id, "67070223");
++    assert.equal(student.faculty_id, "07");
++    assert.equal(student.department_id, "student");
++    assert.deepEqual(student.units, [{ faculty_id: "07", department_id: "student" }]);
++  });
++
++  await check("อีเมลซ้ำ (ตัวพิมพ์ต่าง) ถูกปฏิเสธ", async () => {
++    await assert.rejects(() => users.create({ email: "67070223@KMITL.ac.th", name: "ซ้ำ" }));
++  });
++
++  await check("สร้าง Staff / Admin แล้วยังไม่มี units", async () => {
++    staff = await users.create({ email: "somchai@example.com", name: "สมชาย ใจดี", role: "STAFF" });
++    admin = await users.create({ email: "admin@example.com", name: "ผู้ดูแลระบบ", role: "ADMIN" });
++    assert.deepEqual(staff.units, []);
++    assert.equal(staff.faculty_id, null);
++  });
++
++  await check("setUnits: หลายคู่, ตัดคู่ซ้ำ, แทนที่ของเดิม", async () => {
++    let s = await users.setUnits(staff.id, [
++      { faculty_id: "07", department_id: "it" },
++      { faculty_id: "07", department_id: "it" },
++      { faculty_id: "01", department_id: "building" },
++    ]);
++    assert.equal(s.units.length, 2);
++    s = await users.setUnits(staff.id, [{ faculty_id: "00", department_id: "building" }]);
++    assert.deepEqual(s.units, [{ faculty_id: "00", department_id: "building" }]);
++  });
++
++  await check("setUnits: คณะ/หน่วยงานที่ไม่มี และนักศึกษา ถูกปฏิเสธ (ของเดิมไม่หาย)", async () => {
++    await assert.rejects(() => users.setUnits(staff.id, [{ faculty_id: "55", department_id: "it" }]));
++    await assert.rejects(() => users.setUnits(staff.id, [{ faculty_id: "07", department_id: "xx" }]));
++    await assert.rejects(() => users.setUnits(student.id, [{ faculty_id: "07", department_id: "it" }]));
++    assert.equal((await users.findById(staff.id)).units.length, 1);
++  });
++
++  await check("staffForTicket: ตรงทั้งคณะ+หน่วยงาน, ไม่ตรงไม่ได้, ปิดบัญชีแล้วไม่ได้", async () => {
++    await users.setUnits(staff.id, [
++      { faculty_id: "07", department_id: "it" },
++      { faculty_id: "07", department_id: "student" }, // ข้อเสนอแนะ → กิจการนักศึกษา
++    ]);
++    assert.equal((await users.staffForTicket("07", "it")).length, 1);
++    assert.equal((await users.staffForTicket("07", "student")).length, 1);
++    assert.equal((await users.staffForTicket("07", "building")).length, 0);
++    assert.equal((await users.staffForTicket("01", "it")).length, 0);
++
++    await users.update(staff.id, { active: false });
++    assert.equal((await users.staffForTicket("07", "it")).length, 0);
++    await users.update(staff.id, { active: true });
++    assert.equal((await users.staffForTicket("07", "it")).length, 1);
++  });
++
++  await check("update: เปลี่ยน Staff → USER ล้าง units, role แปลก ๆ ถูกปฏิเสธ", async () => {
++    await assert.rejects(() => users.update(staff.id, { role: "GOD" }));
++    const u = await users.update(staff.id, { role: "USER" });
++    assert.equal(u.role, "USER");
++    const rows = await db.query("SELECT * FROM user_units WHERE user_id=?", [staff.id]);
++    assert.equal(rows.length, 0);
++  });
++
++  await check("findByEmail / list", async () => {
++    assert.equal((await users.findByEmail(" ADMIN@example.com ")).role, "ADMIN");
++    assert.equal(await users.findByEmail("nobody@x.com"), null);
++    assert.equal((await users.list()).length, 3);
++  });
++
++  console.log(`\nผ่านทั้งหมด ${passed} ข้อ`);
++  await db.close();
++})().catch(async (e) => {
++  console.error("\n✗ ล้มเหลว:", e);
++  process.exitCode = 1;
++});

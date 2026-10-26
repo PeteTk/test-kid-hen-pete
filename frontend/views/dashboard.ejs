@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIDHEN | <%= title %></title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+<body class="bg-[#EEEDEA]">
+
+<%
+  const isAdmin = role === "admin";
+  const STATUS_COLOR = {
+    "รอดำเนินการ":    "bg-[#6FA0F0]",
+    "กำลังดำเนินการ": "bg-[#F6A85A]",
+    "เสร็จสิ้น":       "bg-[#8BDA5B]",
+  };
+%>
+
+<div class="flex min-h-screen lg:h-screen lg:overflow-hidden">
+  <%- include(`partials/sidebar-${role}`) %>
+
+  <main class="flex-1 min-w-0 flex flex-col">
+    <%- include("partials/topbar") %>
+
+    <!-- เนื้อหา: พอดีความสูงที่เหลือของจอ -->
+    <section class="flex-1 min-h-0 p-6 grid grid-cols-1 lg:grid-cols-3 lg:grid-rows-[auto_1fr] gap-6">
+
+      <!-- ① คำร้องทั้งหมด -->
+      <div class="bg-white rounded-2xl p-6 flex flex-col">
+        <p class="text-lg font-bold text-gray-500">คำร้องทั้งหมด</p>
+        <p class="text-6xl font-bold text-[#1F2A8A] leading-tight"><%= total %></p>
+
+        <div class="flex h-4 rounded-full overflow-hidden bg-[#EEEDEA] mt-3">
+          <% byStatus.forEach(s => { %>
+            <div class="<%= STATUS_COLOR[s.status] %>" data-w="<%= s.pct %>" title="<%= s.status %> <%= s.count %>"></div>
+          <% }) %>
+        </div>
+
+        <div class="flex flex-col gap-1 mt-4">
+          <% byStatus.forEach(s => { %>
+            <a href="<%= base %>/requests?status=<%= encodeURIComponent(s.status) %>"
+               class="flex items-center gap-3 text-base rounded-lg px-2 py-1 hover:bg-gray-50">
+              <span class="w-3 h-3 rounded-full <%= STATUS_COLOR[s.status] %>"></span>
+              <span class="flex-1"><%= s.status %></span>
+              <span class="text-lg font-bold"><%= s.count %></span>
+            </a>
+          <% }) %>
+        </div>
+      </div>
+
+      <!-- ② ภาพรวม -->
+      <div class="bg-white rounded-2xl p-6 flex flex-col">
+        <p class="text-lg font-bold text-gray-500 mb-4">ภาพรวม</p>
+        <div class="flex-1 grid grid-cols-2 gap-4">
+          <div class="rounded-xl bg-[#EEF3FF] p-4 flex flex-col justify-between">
+            <p class="text-sm font-semibold text-gray-600">ใหม่ 7 วันล่าสุด</p>
+            <p class="text-4xl font-bold text-[#1F2A8A]"><%= newThisWeek %></p>
+          </div>
+          <div class="rounded-xl bg-[#E3FBD2] p-4 flex flex-col justify-between">
+            <p class="text-sm font-semibold text-gray-600">แก้ไขสำเร็จ</p>
+            <p class="text-4xl font-bold text-[#3A8A12]"><%= doneRate %>%</p>
+          </div>
+          <% if (isAdmin) { %>
+            <a href="/admin/users" class="rounded-xl bg-[#FFF6EB] p-4 flex flex-col justify-between hover:brightness-95">
+              <p class="text-sm font-semibold text-gray-600">ผู้ใช้งานทั้งหมด</p>
+              <p class="text-4xl font-bold text-[#E07B12]"><%= userCount %></p>
+            </a>
+            <a
+              href="/admin/faq?status=published"
+              class="rounded-xl bg-[#FDF1EA] p-4 flex flex-col justify-between hover:brightness-95">
+              <p class="text-sm font-semibold text-gray-600">
+                หัวข้อปัญหาที่เผยแพร่
+              </p>
+
+              <p class="text-4xl font-bold text-[#E01E1E]">
+                <%= publishedTopics %>
+              </p>
+            </a>
+          <% } %>
+        </div>
+      </div>
+
+      <!-- ③ คำร้องล่าสุด (คอลัมน์ขวา สูงเต็ม) -->
+      <div class="bg-white rounded-2xl p-6 lg:row-span-2 flex flex-col min-h-0">
+        <div class="flex items-center justify-between mb-3">
+          <p class="text-lg font-bold text-gray-500">คำร้องล่าสุด</p>
+          <a href="<%= base %>/requests" class="text-sm font-semibold text-[#1F2A8A] hover:underline">ดูทั้งหมด →</a>
+        </div>
+
+        <% if (latest.length === 0) { %>
+          <p class="text-base text-gray-400 m-auto">ยังไม่มีคำร้อง</p>
+        <% } %>
+
+        <div class="flex-1 min-h-0 overflow-y-auto -mx-2">
+          <% latest.forEach(r => { %>
+            <a href="<%= base %>/requests/<%= r.id %>"
+               class="block px-3 py-3 border-b border-gray-100 last:border-0 rounded-lg hover:bg-gray-50">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-base font-bold"><%= r.code %></span>
+                <%- include("partials/status-badge", { status: r.status }) %>
+              </div>
+              <p class="text-base truncate mt-1"><%= r.title %></p>
+              <p class="text-sm text-gray-400"><%= r.type %> · <%= r.date %></p>
+            </a>
+          <% }) %>
+        </div>
+      </div>
+
+      <!-- ④ กราฟ (กว้าง 2 คอลัมน์ สูงเต็มที่เหลือ) -->
+      <div class="bg-white rounded-2xl p-6 lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-10 min-h-0">
+
+        <!-- คำร้องตามประเภท -->
+        <div class="flex flex-col min-h-0">
+          <p class="text-lg font-bold text-gray-500 mb-4">คำร้องตามประเภท</p>
+          <div class="flex-1 flex flex-col justify-around gap-3">
+            <% byType.forEach(t => { %>
+              <div>
+                <div class="flex justify-between text-base mb-1">
+                  <span><%= t.type %></span>
+                  <span class="font-bold"><%= t.count %></span>
+                </div>
+                <div class="h-3 rounded-full bg-[#EEEDEA] overflow-hidden">
+                  <div class="h-full rounded-full bg-[#1F2A8A]" data-w="<%= t.pct %>"></div>
+                </div>
+              </div>
+            <% }) %>
+          </div>
+        </div>
+
+        <!-- คำร้องใหม่ 7 วันล่าสุด -->
+        <div class="flex flex-col min-h-[220px]">
+          <p class="text-lg font-bold text-gray-500 mb-4">คำร้องใหม่ 7 วันล่าสุด</p>
+          <div class="flex-1 flex items-stretch gap-3">
+            <% last7.forEach(d => { %>
+              <div class="flex-1 flex flex-col items-center">
+                <span class="text-sm font-bold mb-1"><%= d.count %></span>
+                <div class="flex-1 w-full flex items-end justify-center">
+                  <div class="w-full max-w-10 rounded-t-lg bg-[#F6A85A] min-h-1" data-h="<%= d.pct %>"></div>
+                </div>
+                <span class="text-sm text-gray-500 mt-2"><%= d.label %></span>
+              </div>
+            <% }) %>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  </main>
+</div>
+
+<script>
+  // ความยาวแท่งกราฟ (data-w = กว้าง %, data-h = สูง %)
+  document.querySelectorAll("[data-w]").forEach((el) => (el.style.width = el.dataset.w + "%"));
+  document.querySelectorAll("[data-h]").forEach((el) => (el.style.height = el.dataset.h + "%"));
+</script>
+</body>
+</html>

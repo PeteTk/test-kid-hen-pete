@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIDHEN | ดำเนินการคำร้อง <%= item.code %></title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+<body class="bg-[#EEEDEA]">
+
+<%
+  const STATUS_STYLE = {
+    "รอดำเนินการ":    "bg-[#E3EEFF] border-[#6FA0F0] text-[#1F4FB5]",
+    "กำลังดำเนินการ": "bg-[#FFE9D6] border-[#F6A85A] text-[#E07B12]",
+    "เสร็จสิ้น":       "bg-[#E3FBD2] border-[#8BDA5B] text-[#3A8A12]",
+  };
+%>
+
+<div class="flex min-h-screen">
+  <%- include("../partials/sidebar-admin") %>
+
+  <main class="flex-1">
+    <%- include("../partials/topbar") %>
+
+    <section class="p-4">
+      <form method="POST" action="/admin/requests/<%= item.id %>/update" class="bg-white p-6 min-h-[660px]">
+
+        <!-- ปุ่มย้อนกลับ -->
+        <a href="/admin/requests" title="ย้อนกลับ"
+           class="w-9 h-9 rounded-full bg-[#F6A85A] flex items-center justify-center hover:opacity-80">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </a>
+
+        <!-- หัวข้อ + สถานะ + ปุ่มอัปเดต -->
+        <div class="flex flex-wrap items-center justify-between gap-4 mt-2 pb-3 border-b-4 border-[#E2E1DD]">
+          <h2 class="text-xl font-bold text-[#1F2A8A]">ดำเนินการคำร้อง</h2>
+
+          <div class="flex items-center gap-4">
+            <% if (saved) { %>
+              <span class="text-sm text-green-700">✓ บันทึกแล้ว</span>
+            <% } %>
+            <label for="status" class="text-sm text-gray-500">สถานะ</label>
+            <select id="status" name="status"
+                    class="w-[150px] h-8 px-3 rounded-lg border text-xs text-center cursor-pointer <%= STATUS_STYLE[item.status] %>">
+              <% STATUSES.forEach(s => { %>
+                <option value="<%= s %>" <%= item.status === s ? "selected" : "" %>><%= s %></option>
+              <% }) %>
+            </select>
+            <button type="submit"
+                    class="px-6 h-9 rounded-lg border border-black bg-[#F6A85A] text-sm font-semibold hover:bg-[#F39A3E]">
+              อัปเดตสถานะ
+            </button>
+          </div>
+        </div>
+
+        <!-- ข้อมูลคำร้อง -->
+        <div class="grid grid-cols-3 gap-4 max-w-[520px] mt-6 text-sm">
+          <div>
+            <p class="text-gray-500 mb-1">หมายเลขคำร้อง</p>
+            <p class="font-semibold"><%= item.code %></p>
+          </div>
+          <div>
+            <p class="text-gray-500 mb-1">ประเภท</p>
+            <p class="font-semibold"><%= item.type %></p>
+          </div>
+          <div>
+            <p class="text-gray-500 mb-1">วันที่แจ้ง</p>
+            <p class="font-semibold"><%= item.date %></p>
+          </div>
+        </div>
+
+        <div class="mt-8 text-sm">
+          <p class="text-gray-500 mb-1">หัวข้อ</p>
+          <p class="font-semibold"><%= item.title %></p>
+        </div>
+
+        <div class="mt-4 text-sm">
+            <p class="text-gray-500 mb-1">สถานที่</p>
+            <p class="font-semibold"><%= item.location || "-" %></p>
+        </div>
+
+        <div class="mt-4 text-sm">
+          <p class="text-gray-500 mb-1">รายละเอียด</p>
+          <p class="font-semibold"><%= item.detail %></p>
+        </div>
+
+        <!-- รูปภาพแนบ -->
+        <div class="mt-6 pb-4 border-b-4 border-[#E2E1DD]">
+          <p class="text-sm text-gray-500 mb-2">รูปภาพแนบ</p>
+          <div class="flex flex-wrap gap-6">
+            <% if (item.images.length === 0) { %>
+              <p class="text-sm text-gray-400">ไม่มีรูปภาพแนบ</p>
+            <% } %>
+            <% item.images.forEach(src => { %>
+              <a href="<%= src %>" target="_blank">
+                <img src="<%= src %>" alt="รูปแนบ" class="w-28 h-28 object-cover rounded-lg bg-gray-100 hover:opacity-80">
+              </a>
+            <% }) %>
+          </div>
+        </div>
+
+        <!-- รายละเอียดการดำเนินการ -->
+        <div class="mt-4">
+          <label for="note" class="text-sm text-gray-500">รายละเอียดการดำเนินการ</label>
+          <textarea id="note" name="note" rows="4"
+                    class="mt-2 w-full rounded-lg border border-gray-300 p-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#1F2A8A]"><%= item.note %></textarea>
+        </div>
+
+      </form>
+    </section>
+  </main>
+</div>
+
+</body>
+</html>

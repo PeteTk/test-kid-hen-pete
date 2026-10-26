@@ -1,0 +1,10 @@
+<%
+  const BADGE_STYLE = {
+    "รอดำเนินการ":    "bg-[#E3EEFF] border-[#6FA0F0] text-[#1F4FB5]",
+    "กำลังดำเนินการ": "bg-[#FFE9D6] border-[#F6A85A] text-[#E07B12]",
+    "เสร็จสิ้น":       "bg-[#E3FBD2] border-[#8BDA5B] text-[#3A8A12]",
+  };
+%>
+<span class="inline-block px-3 py-0.5 rounded-full border text-xs whitespace-nowrap <%= BADGE_STYLE[status] || 'bg-gray-100 border-gray-300' %>">
+  <%= status %>
+</span>

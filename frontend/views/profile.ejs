@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KIDHEN | <%= title %></title>
+  <link rel="stylesheet" href="/css/output.css">
+</head>
+<body class="bg-[#EEEDEA]">
+
+<%
+  const HOME = { ADMIN: "/admin/dashboard", STAFF: "/staff/dashboard", USER: "/user/home" };
+  const backUrl = HOME[me.role];
+%>
+
+<div class="flex min-h-screen">
+  <%- include(`partials/sidebar-${me.role.toLowerCase()}`) %>
+
+  <main class="flex-1">
+    <%- include("partials/topbar") %>
+    <section class="p-4">
+      <form method="POST" action="/profile" enctype="multipart/form-data"
+            class="bg-white p-6 min-h-[660px] flex flex-col">
+
+        <!-- ปุ่มย้อนกลับ -->
+        <a href="<%= backUrl %>" title="ย้อนกลับ"
+           class="w-9 h-9 rounded-full bg-[#F6A85A] flex items-center justify-center hover:opacity-80">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="black" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </a>
+
+        <h2 class="text-xl font-bold text-[#1F2A8A] mt-2 pb-3 border-b-4 border-[#EEEDEA]">แก้ไขข้อมูลผู้ใช้</h2>
+
+        <% if (saved) { %>
+          <p class="mt-4 text-sm text-[#3A8A12] bg-[#E3FBD2] border border-[#8BDA5B] rounded-lg px-4 py-2">✓ บันทึกข้อมูลเรียบร้อยแล้ว</p>
+        <% } %>
+        <% if (error) { %>
+          <p class="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2"><%= error %></p>
+        <% } %>
+
+        <div class="flex flex-col md:flex-row gap-10 mt-10">
+
+          <!-- รูปโปรไฟล์ -->
+          <div class="flex flex-col items-center gap-4 md:w-[300px] shrink-0">
+            <div class="w-[200px] h-[200px] rounded-full bg-[#B3B3B3] overflow-hidden flex items-center justify-center">
+              <img id="avatarPreview" <%- me.avatar ? `src="${me.avatar}"` : "" %> alt="รูปโปรไฟล์"
+                   class="w-full h-full object-cover <%= me.avatar ? '' : 'hidden' %>">
+              <svg id="avatarPlaceholder" width="100" height="110" viewBox="0 0 100 110" fill="white"
+                   class="<%= me.avatar ? 'hidden' : '' %>">
+                <circle cx="50" cy="30" r="28"/>
+                <path d="M2 110a48 40 0 0 1 96 0z"/>
+              </svg>
+            </div>
+
+            <label for="avatar"
+                   class="px-6 py-1.5 rounded-lg bg-[#E6ECF5] text-sm font-semibold text-[#1F2A8A] cursor-pointer hover:bg-[#D6DFEE]">
+              เปลี่ยนรูปโปรไฟล์
+            </label>
+            <input id="avatar" name="avatar" type="file" accept="image/*" class="hidden">
+            <p class="text-xs text-gray-400">ไฟล์รูป ไม่เกิน 2MB</p>
+          </div>
+
+          <!-- ข้อมูล -->
+          <div class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 content-start">
+            <!-- แก้ (3b-2): ชื่อ-นามสกุล ช่องเดียว (ตาราง users มีคอลัมน์ name คอลัมน์เดียว) -->
+            <div class="md:col-span-2">
+              <label for="name" class="block text-sm font-semibold mb-1">ชื่อ-นามสกุล</label>
+              <input id="name" name="name" type="text" required maxlength="150" value="<%= me.name %>"
+                     class="w-full h-11 px-5 rounded-lg border border-gray-500 text-sm focus:outline-none focus:ring-2 focus:ring-[#1F2A8A]">
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold mb-1">อีเมล</label>
+              <input type="text" readonly value="<%= me.email %>"
+                     class="w-full h-11 px-5 rounded-lg border border-gray-500 bg-[#D9D9D9] text-sm text-gray-600 cursor-not-allowed">
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold mb-1">คณะ</label>
+              <input type="text" readonly value="<%= me.faculty %>"
+                     class="w-full h-11 px-5 rounded-lg border border-gray-500 bg-[#D9D9D9] text-sm text-gray-600 cursor-not-allowed">
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">ฝ่าย</label>
+              <input type="text" readonly value="<%= me.department %>"
+                     class="w-full h-11 px-5 rounded-lg border border-gray-500 bg-[#D9D9D9] text-sm text-gray-600 cursor-not-allowed">
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold mb-1">บทบาท</label>
+              <input type="text" readonly value="<%= me.role.toLowerCase() %>"
+                     class="w-full h-11 px-5 rounded-lg border border-gray-500 bg-[#D9D9D9] text-sm text-gray-600 cursor-not-allowed">
+            </div>
+          </div>
+        </div>
+
+        <!-- ปุ่ม -->
+        <div class="mt-auto pt-10 flex justify-end gap-6">
+          <a href="<%= backUrl %>"
+             class="w-[180px] h-11 rounded-full border border-black bg-[#D9D9D9] text-lg font-bold flex items-center justify-center hover:bg-[#C9C9C9]">
+            ยกเลิก
+          </a>
+          <button type="submit"
+                  class="w-[180px] h-11 rounded-full border border-black bg-[#F6A85A] text-lg font-bold hover:bg-[#F39A3E]">
+            บันทึกข้อมูล
+          </button>
+        </div>
+
+      </form>
+    </section>
+  </main>
+</div>
+
+<script>
+  // แสดงรูปใหม่ทันทีที่เลือก (ยังไม่บันทึกจนกว่าจะกด บันทึกข้อมูล)
+  const input = document.getElementById("avatar");
+  const preview = document.getElementById("avatarPreview");
+  const placeholder = document.getElementById("avatarPlaceholder");
+
+  input.addEventListener("change", () => {
+    const file = input.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      alert("รูปต้องไม่เกิน 2MB");
+      input.value = "";
+      return;
+    }
+    preview.src = URL.createObjectURL(file);
+    preview.classList.remove("hidden");
+    placeholder.classList.add("hidden");
+  });
+</script>
+</body>
+</html>

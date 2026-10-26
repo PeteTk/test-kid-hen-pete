@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KIDHEN | Sign in</title>
+    <link rel="stylesheet" href="/css/output.css">
+    <link href="https://fonts.googleapis.com/css2?family=Anton&display=swap" rel="stylesheet">
+</head>
+
+<body class="min-h-screen bg-[#161D63] flex items-center justify-center px-4 py-10">
+    <div class="w-full max-w-4xl flex flex-col md:flex-row items-center justify-between gap-12">
+
+        <img src="/img/logo-big.svg" alt="KIDHEN" class="w-[280px] h-auto select-none">
+
+        <form method="POST" action="/signin"
+            class="w-full max-w-sm bg-white rounded-3xl p-8 flex flex-col gap-4 shadow-xl">
+
+            <!-- แก้ (3b-2): ล็อกอินด้วยอีเมล (บัญชีทดลองพิมพ์ username เดิมได้ เช่น user) -->
+            <input type="text" name="username" placeholder="Email หรือ Username" required
+                value="<%= typeof login === 'string' ? login : '' %>" autocomplete="username"
+                class="h-13 rounded-full border border-gray-800 px-5 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#F6A85A]">
+
+            <input type="password" name="password" placeholder="Password" required autocomplete="current-password"
+                class="h-13 rounded-full border border-gray-800 px-5 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#F6A85A]">
+
+            <% if (error) { %>
+                <p class="text-sm text-red-600 text-center"><%= error %></p>
+            <% } %>
+
+            <!-- ปุ่ม SIGN IN: ส่งฟอร์มไปตรวจรหัส -->
+            <button type="submit" class="w-full hover:opacity-80 transition">
+                <img src="/img/btn-signin.svg" alt="Sign in" class="w-full h-auto">
+            </button>
+
+            <div class="flex items-center gap-3 text-xs text-gray-400">
+                <span class="flex-1 h-px bg-gray-200"></span> or <span class="flex-1 h-px bg-gray-200"></span>
+            </div>
+
+            <button type="button" onclick="alert('Google Login จะเชื่อมต่อภายหลัง')"
+                class="w-full hover:opacity-80 transition">
+                <img src="/img/btn-google.svg" alt="Continue with Google" class="w-full h-auto">
+            </button>
+
+            <% if (devAccounts && devAccounts.length) { %>
+                <!-- เพิ่ม (3b-2): บัญชีทดลอง แสดงเฉพาะตอนรันในเครื่อง (SQLite, ไม่ใช่ production) -->
+                <details class="text-xs text-gray-500">
+                    <summary class="cursor-pointer text-center">บัญชีทดลอง (รหัสผ่าน 1234) · user&lt;รหัสคณะ&gt; / staff&lt;รหัสคณะ&gt;</summary>
+                    <ul class="mt-2 space-y-1 max-h-60 overflow-y-auto text-left">
+                        <% devAccounts.forEach(a => { %>
+                            <li><b><%= a.username %></b> · <%= a.email %> · <%= a.role %></li>
+                        <% }) %>
+                    </ul>
+                </details>
+            <% } %>
+
+        </form>
+
+    </div>
+</body>
+
+</html>
