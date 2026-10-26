@@ -17,17 +17,17 @@
   };
 %>
 
-<div class="flex min-h-screen lg:h-screen lg:overflow-hidden">
+<div class="flex min-h-screen">
   <%- include(`partials/sidebar-${role}`) %>
 
   <main class="flex-1 min-w-0 flex flex-col">
     <%- include("partials/topbar") %>
 
-    <!-- เนื้อหา: พอดีความสูงที่เหลือของจอ -->
-    <section class="flex-1 min-h-0 p-6 grid grid-cols-1 lg:grid-cols-3 lg:grid-rows-[auto_1fr] gap-6">
+    <!-- เนื้อหา: จอเตี้ย/แคบก็เลื่อนลงได้ ไม่บีบการ์ดจนล้น -->
+    <section class="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
 
       <!-- ① คำร้องทั้งหมด -->
-      <div class="bg-white rounded-2xl p-6 flex flex-col">
+      <div class="bg-white rounded-2xl p-6 flex flex-col min-w-0">
         <p class="text-lg font-bold text-gray-500">คำร้องทั้งหมด</p>
         <p class="text-6xl font-bold text-[#1F2A8A] leading-tight"><%= total %></p>
 
@@ -50,9 +50,9 @@
       </div>
 
       <!-- ② ภาพรวม -->
-      <div class="bg-white rounded-2xl p-6 flex flex-col">
+      <div class="bg-white rounded-2xl p-6 flex flex-col min-w-0">
         <p class="text-lg font-bold text-gray-500 mb-4">ภาพรวม</p>
-        <div class="flex-1 grid grid-cols-2 gap-4">
+        <div class="grid grid-cols-2 gap-4">
           <div class="rounded-xl bg-[#EEF3FF] p-4 flex flex-col justify-between">
             <p class="text-sm font-semibold text-gray-600">ใหม่ 7 วันล่าสุด</p>
             <p class="text-4xl font-bold text-[#1F2A8A]"><%= newThisWeek %></p>
@@ -82,7 +82,7 @@
       </div>
 
       <!-- ③ คำร้องล่าสุด (คอลัมน์ขวา สูงเต็ม) -->
-      <div class="bg-white rounded-2xl p-6 lg:row-span-2 flex flex-col min-h-0">
+      <div class="bg-white rounded-2xl p-6 lg:row-span-2 flex flex-col min-w-0">
         <div class="flex items-center justify-between mb-3">
           <p class="text-lg font-bold text-gray-500">คำร้องล่าสุด</p>
           <a href="<%= base %>/requests" class="text-sm font-semibold text-[#1F2A8A] hover:underline">ดูทั้งหมด →</a>
@@ -92,7 +92,7 @@
           <p class="text-base text-gray-400 m-auto">ยังไม่มีคำร้อง</p>
         <% } %>
 
-        <div class="flex-1 min-h-0 overflow-y-auto -mx-2">
+        <div class="-mx-2">
           <% latest.forEach(r => { %>
             <a href="<%= base %>/requests/<%= r.id %>"
                class="block px-3 py-3 border-b border-gray-100 last:border-0 rounded-lg hover:bg-gray-50">
@@ -108,16 +108,16 @@
       </div>
 
       <!-- ④ กราฟ (กว้าง 2 คอลัมน์ สูงเต็มที่เหลือ) -->
-      <div class="bg-white rounded-2xl p-6 lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-10 min-h-0">
+      <div class="bg-white rounded-2xl p-6 lg:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-10 min-w-0">
 
         <!-- คำร้องตามประเภท -->
-        <div class="flex flex-col min-h-0">
+        <div class="flex flex-col min-w-0">
           <p class="text-lg font-bold text-gray-500 mb-4">คำร้องตามประเภท</p>
-          <div class="flex-1 flex flex-col justify-around gap-3">
+          <div class="flex flex-col gap-3">
             <% byType.forEach(t => { %>
               <div>
-                <div class="flex justify-between text-base mb-1">
-                  <span><%= t.type %></span>
+                <div class="flex justify-between gap-2 text-base mb-1">
+                  <span class="truncate"><%= t.type %></span>
                   <span class="font-bold"><%= t.count %></span>
                 </div>
                 <div class="h-3 rounded-full bg-[#EEEDEA] overflow-hidden">
@@ -129,16 +129,17 @@
         </div>
 
         <!-- คำร้องใหม่ 7 วันล่าสุด -->
-        <div class="flex flex-col min-h-[220px]">
+        <div class="flex flex-col min-w-0">
           <p class="text-lg font-bold text-gray-500 mb-4">คำร้องใหม่ 7 วันล่าสุด</p>
-          <div class="flex-1 flex items-stretch gap-3">
+          <!-- พื้นที่แท่งสูงตายตัว 180px → แท่ง 100% ไม่ดันออกนอกการ์ด -->
+          <div class="flex gap-2">
             <% last7.forEach(d => { %>
-              <div class="flex-1 flex flex-col items-center">
+              <div class="flex-1 min-w-0 flex flex-col items-center">
                 <span class="text-sm font-bold mb-1"><%= d.count %></span>
-                <div class="flex-1 w-full flex items-end justify-center">
+                <div class="w-full flex items-end justify-center overflow-hidden" style="height:180px">
                   <div class="w-full max-w-10 rounded-t-lg bg-[#F6A85A] min-h-1" data-h="<%= d.pct %>"></div>
                 </div>
-                <span class="text-sm text-gray-500 mt-2"><%= d.label %></span>
+                <span class="text-xs text-gray-500 mt-2 whitespace-nowrap"><%= d.label %></span>
               </div>
             <% }) %>
           </div>
