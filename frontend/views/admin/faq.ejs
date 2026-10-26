@@ -51,11 +51,7 @@
         <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
           <div class="rounded-xl bg-[#F7F8FB] px-4 py-3">
             <p class="text-xs text-gray-500">การทำงาน</p>
-            <% if (mode === "eventbridge") { %>
-              <p class="mt-1 text-sm">EventBridge (ตั้งเวลา / ปุ่มนี้) → Lambda → Gemini → RDS</p>
-            <% } else { %>
-              <p class="mt-1 text-sm">โหมดในเครื่อง: เว็บเรียก Gemini เอง (บน AWS ใช้ Lambda)</p>
-            <% } %>
+            <p class="mt-1 text-sm">ประมวลผลอัตโนมัติทุกวัน หรือกดปุ่ม "ประมวลผลตอนนี้"</p>
             <p class="mt-1 text-xs text-gray-500">รอจัดกลุ่ม <%= pending %> คำร้อง (กรองข้อมูลส่วนบุคคลแล้ว)</p>
           </div>
 
@@ -83,14 +79,23 @@
           <% } %>
         </div>
 
-        <% if (lastRun && !lastRun.success) { %>
+        <% if (lastRun && !lastRun.success) {
+             // ไม่แสดงข้อความดิบ (มีชื่อบริการ/โมเดล) — รายละเอียดจริงอยู่ใน CloudWatch Logs ของ Lambda
+             const raw = String(lastRun.error || "");
+             const code = (raw.match(/HTTP (?:Error )?(\d{3})/) || [])[1];
+             const friendly =
+               code === "429" ? "ระบบประมวลผลใช้งานเกินโควตาชั่วคราว กรุณาลองใหม่ภายหลัง"
+               : code ? `ระบบประมวลผลขัดข้อง (รหัส ${code}) กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ`
+               : /not set|ยังไม่ได้ตั้ง|ไม่ได้ตั้งค่า/i.test(raw) ? "ยังไม่ได้ตั้งค่าระบบประมวลผล"
+               : "ประมวลผลไม่สำเร็จ กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ";
+        %>
           <p class="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2 break-words">
-            <%= lastRun.error %>
+            <%= friendly %>
           </p>
         <% } %>
 
         <p class="mt-3 text-xs text-gray-500">
-          ปุ่มนี้เรียก Gemini จริง เฉพาะข้อมูลใหม่/เปลี่ยน และไม่เปลี่ยนวันเวลารอบประจำ
+          ปุ่มนี้ประมวลผลเฉพาะคำร้องใหม่/ที่เปลี่ยน และไม่เปลี่ยนเวลารอบประจำวัน
         </p>
       </div>
 

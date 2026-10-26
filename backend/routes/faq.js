@@ -133,7 +133,7 @@ router.post("/run", async (req, res) => {
       error: false,
       text:
         via === "eventbridge"
-          ? "ส่งงานให้ Lambda แล้ว (EventBridge) รอประมาณ 1–2 นาทีแล้วกดรีเฟรช"
+          ? "เริ่มประมวลผลแล้ว รอประมาณ 1–2 นาทีแล้วกดรีเฟรช"
           : "เริ่มประมวลผลแล้ว กดรีเฟรชเพื่อตรวจผล",
     };
   } catch (error) {
