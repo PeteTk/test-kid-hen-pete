@@ -11,8 +11,10 @@ const path = require("node:path");
 const usersRepo = require("../repo/users");
 const { cognitoGroups } = require("../service/cognito-groups");
 const { avatarUrl } = require("../auth/session-user");
-const { avatarUpload, UPLOAD_ROOT } = require("../utils/upload");
+const { avatarUpload } = require("../utils/upload");
+const { storage } = require("../service/storage");
 const { buildDashboardData } = require("../utils/dashboard");
+const config = require("../config");
 
 // ทุกหน้าในไฟล์นี้ ต้องเป็น ADMIN เท่านั้น
 router.use((req, res, next) => {
@@ -111,10 +113,9 @@ router.post("/requests/:id/update", (req, res, next) => updateRequest(req, res, 
 // แก้ (3b-2): อ่าน/แก้จากตาราง users + user_units (เดิมใช้ mockUsers)
 // โหมด alb: เปลี่ยน role = ย้ายกลุ่มใน Cognito ด้วย (ไม่งั้น login ครั้งหน้า role จะถูก sync กลับ)
 
-// รูปโปรไฟล์ที่ถูกแทนที่: ลบไฟล์เก่าในเครื่อง (ขั้น 3d ย้ายไป S3)
+// รูปโปรไฟล์ที่ถูกแทนที่ (ในเครื่อง = ไฟล์, 3d บน AWS = object ใน S3)
 function removeAvatarFile(key) {
-  if (typeof key !== "string" || !/^avatars\/[\w.-]+$/.test(key)) return;
-  fs.rmSync(path.join(UPLOAD_ROOT, key), { force: true });
+  if (typeof key === "string" && key.startsWith("avatars/")) storage.remove(key);
 }
 
 // หน้า จัดการผู้ใช้ (ค้นหา + กรองบทบาท)
@@ -171,6 +172,90 @@ router.post("/users/:id/delete", async (req, res, next) => {
   }
 });
 
+// ---------- เพิ่มผู้ใช้ (3b-3, UC-09) ----------
+// cognito/alb: สร้างบัญชีใน Cognito (ส่งรหัสผ่านชั่วคราวทางอีเมล) + ใส่กลุ่มตาม role แล้วสร้างแถวใน users
+// local     : สร้างแถวใน users พร้อมรหัสผ่านที่ Admin กำหนด (ไม่ต่อ AWS)
+const LOCAL_AUTH = config.auth.mode === "local";
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+async function renderUserNew(res, form = {}, error = null) {
+  const [faculties, departments] = await Promise.all([
+    usersRepo.listFaculties(),
+    usersRepo.listDepartments(),
+  ]);
+  res.status(error ? 400 : 200).render("admin/user-new", {
+    title: "จัดการผู้ใช้",
+    active: "users",
+    ROLES: usersRepo.ROLES,
+    FACULTIES: faculties,
+    DEPARTMENTS: departments,
+    localAuth: LOCAL_AUTH,
+    form: { email: "", name: "", role: "USER", units: [], ...form },
+    error,
+  });
+}
+
+router.get("/users/new", async (req, res, next) => {
+  try {
+    await renderUserNew(res);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/users/new", async (req, res, next) => {
+  const email = typeof req.body.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+  const role = req.body.role;
+  const password = typeof req.body.password === "string" ? req.body.password : "";
+  const read = readUnits(req.body);
+  const form = { email, name, role, units: read.units || [] };
+  const fail = (message) => renderUserNew(res, form, message);
+
+  try {
+    if (!EMAIL_RE.test(email) || email.length > 254) return await fail("อีเมลไม่ถูกต้อง");
+    if (!name || name.length > 150) return await fail("กรุณากรอกชื่อ-นามสกุล (ไม่เกิน 150 ตัวอักษร)");
+    if (!usersRepo.ROLES.includes(role)) return await fail("บทบาทไม่ถูกต้อง");
+    if (LOCAL_AUTH && password.length < 4) return await fail("กรุณากำหนดรหัสผ่านอย่างน้อย 4 ตัว");
+
+    let units = [];
+    if (role !== "USER") {
+      if (read.error) return await fail(read.error);
+      if (role === "STAFF" && new Set(read.units.map((u) => u.faculty_id)).size !== 1) {
+        return await fail("Staff ต้องมีคณะเดียว หรือเลือกพื้นที่ส่วนกลาง");
+      }
+      units = read.units;
+    }
+
+    if (await usersRepo.findByEmail(email)) {
+      return await fail("มีผู้ใช้อีเมลนี้อยู่แล้ว — แก้ไขบทบาทได้จากรายการผู้ใช้");
+    }
+
+    // Cognito ก่อน: ถ้าสร้างไม่สำเร็จ ไม่สร้างใน DB
+    let cognitoResult = { skipped: true };
+    try {
+      cognitoResult = await cognitoGroups.createUser({ email, name, role });
+    } catch (error) {
+      console.error("[cognito] เพิ่มผู้ใช้ไม่สำเร็จ:", error.name || "", error.message);
+      return await fail("สร้างบัญชีใน Cognito ไม่สำเร็จ: " + (error.message || error.name));
+    }
+
+    const user = await usersRepo.create({
+      email,
+      name,
+      role,
+      ...(LOCAL_AUTH ? { passwordHash: usersRepo.hashPassword(password) } : {}),
+    });
+    if (units.length) await usersRepo.setUnits(user.id, units);
+
+    const created = cognitoResult.skipped ? "local" : cognitoResult.existed ? "existed" : "email";
+    res.redirect(`/admin/users/${user.id}?created=${created}`);
+  } catch (error) {
+    if (error.status === 400) return renderUserNew(res, form, error.message).catch(next);
+    next(error);
+  }
+});
+
 // ---------- แก้ไขข้อมูลผู้ใช้ ----------
 async function renderUserEdit(res, target, extra = {}) {
   const [faculties, departments] = await Promise.all([
@@ -194,6 +279,7 @@ async function renderUserEdit(res, target, extra = {}) {
     autoFaculty,
     error: null,
     saved: false,
+    created: null,
     ...extra,
   });
 }
@@ -203,7 +289,15 @@ router.get("/users/:id", async (req, res, next) => {
   try {
     const target = await usersRepo.findById(req.params.id);
     if (!target) return res.redirect("/admin/users");
-    await renderUserEdit(res, target, { saved: req.query.saved === "1" });
+    const CREATED = {
+      email: "เพิ่มผู้ใช้แล้ว — Cognito ส่งรหัสผ่านชั่วคราวไปที่อีเมล (ครั้งแรกต้องตั้งรหัสใหม่) หรือกด Continue with Google ด้วยอีเมลนี้",
+      existed: "เพิ่มผู้ใช้แล้ว — อีเมลนี้มีบัญชีใน Cognito อยู่แล้ว จึงกำหนดบทบาทให้โดยไม่ส่งอีเมลซ้ำ",
+      local: "เพิ่มผู้ใช้แล้ว — เข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่กำหนด",
+    };
+    await renderUserEdit(res, target, {
+      saved: req.query.saved === "1",
+      created: CREATED[req.query.created] || null,
+    });
   } catch (error) {
     next(error);
   }
@@ -230,7 +324,17 @@ function readUnits(body) {
 router.post("/users/:id", (req, res, next) => {
   avatarUpload.single("avatar")(req, res, async (err) => {
     // ไฟล์ที่เพิ่งอัปโหลด: ถ้าบันทึกไม่สำเร็จต้องลบทิ้ง
-    const uploadedKey = req.file ? `avatars/${req.file.filename}` : null;
+    // 3d: บน AWS browser อัปโหลดตรงไป S3 (key ขึ้นต้นด้วย avatars/<id ของ Admin ที่อัปโหลด>/)
+    let uploadedKey = req.file ? `avatars/${req.file.filename}` : null;
+    let keyError = null;
+    if (storage.s3 && !err) {
+      try {
+        const [file] = await storage.confirm(req.body.avatar_keys, { userId: req.account.id, kind: "avatars" });
+        uploadedKey = file ? file.key : null;
+      } catch (error) {
+        keyError = error.message;
+      }
+    }
     const fail = async (target, message) => {
       removeAvatarFile(uploadedKey);
       await renderUserEdit(res, target, { error: message });
@@ -246,6 +350,7 @@ router.post("/users/:id", (req, res, next) => {
       if (err) {
         return fail(target, "อัปโหลดรูปไม่สำเร็จ: ต้องเป็นไฟล์รูป และไม่เกิน 2MB");
       }
+      if (keyError) return fail(target, keyError);
 
       const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
       const role = req.body.role;

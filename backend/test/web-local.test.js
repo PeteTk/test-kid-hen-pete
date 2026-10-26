@@ -194,6 +194,44 @@ function browser() {
       assert.equal((await victim.get("/profile")).location, "/login");
     });
 
+    await check("Admin เพิ่มผู้ใช้ (3b-3): ตรวจข้อมูล, Staff ต้องมีคณะเดียว, อีเมลซ้ำ, ผู้ใช้ใหม่ล็อกอินได้", async () => {
+      const b = browser();
+      await b.login("admin");
+      assert.equal((await b.get("/admin/users/new")).status, 200);
+      assert.match((await b.get("/admin/users")).body, /href="\/admin\/users\/new"/);
+
+      let r = await b.post("/admin/users/new", { email: "bad", name: "x", role: "USER", password: "1234" });
+      assert.match(r.body, /อีเมลไม่ถูกต้อง/);
+      r = await b.post("/admin/users/new", [
+        ["email", "new.staff@kmitl.ac.th"], ["name", "Staff ใหม่"], ["role", "STAFF"], ["password", "1234"],
+        ["faculty[]", "01"], ["department[]", "it"], ["faculty[]", "05"], ["department[]", "it"],
+      ]);
+      assert.match(r.body, /คณะเดียว/);
+      r = await b.post("/admin/users/new", { email: "staff01@kmitl.ac.th", name: "ซ้ำ", role: "USER", password: "1234" });
+      assert.match(r.body, /มีผู้ใช้อีเมลนี้อยู่แล้ว/);
+
+      r = await b.post("/admin/users/new", {
+        email: "New.Staff@kmitl.ac.th", name: "Staff ใหม่", role: "STAFF", password: "abcd",
+        "faculty[]": "01", "department[]": "it",
+      });
+      const created = await users.findByEmail("new.staff@kmitl.ac.th");
+      assert.equal(r.location, `/admin/users/${created.id}?created=local`);
+      assert.equal(created.role, "STAFF");
+      assert.deepEqual(created.units, [{ faculty_id: "01", department_id: "it" }]);
+      assert.match((await b.get(r.location)).body, /เพิ่มผู้ใช้แล้ว/);
+
+      r = await b.post("/admin/users/new", { email: "67140123@kmitl.ac.th", name: "นศ. ใหม่", role: "USER", password: "abcd" });
+      assert.equal((await users.findByEmail("67140123@kmitl.ac.th")).faculty_id, "14");
+
+      const fresh = browser();
+      assert.equal((await fresh.login("new.staff@kmitl.ac.th", "abcd")).location, "/staff/dashboard");
+
+      // นักศึกษาเข้าไม่ได้
+      const student = browser();
+      await student.login("user");
+      assert.equal((await student.get("/admin/users/new")).location, "/login");
+    });
+
     await check("logout: session ถูกลบจากตาราง sessions", async () => {
       const b = browser();
       await b.login("admin");

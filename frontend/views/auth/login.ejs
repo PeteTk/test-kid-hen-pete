@@ -30,7 +30,7 @@
             <% if (devAccounts && devAccounts.length) { %>
                 <!-- เพิ่ม (3b-2): บัญชีทดลอง แสดงเฉพาะตอนรันในเครื่อง (SQLite, ไม่ใช่ production) -->
                 <details class="text-xs text-gray-500">
-                    <summary class="cursor-pointer text-center">บัญชีทดลอง (รหัสผ่าน 1234) · user&lt;รหัสคณะ&gt; / staff&lt;รหัสคณะ&gt;</summary>
+                    <summary class="cursor-pointer text-center">บัญชีทดลอง (<%= typeof devPassword !== "undefined" ? devPassword : "รหัสผ่าน 1234" %>) · user&lt;รหัสคณะ&gt; / staff&lt;รหัสคณะ&gt;</summary>
                     <ul class="mt-2 space-y-1 max-h-60 overflow-y-auto text-left">
                         <% devAccounts.forEach(a => { %>
                             <li><b><%= a.username %></b> · <%= a.email %> · <%= a.role %></li>

@@ -57,7 +57,7 @@
                    class="px-6 py-1.5 rounded-lg bg-[#E6ECF5] text-sm font-semibold text-[#1F2A8A] cursor-pointer hover:bg-[#D6DFEE]">
               เปลี่ยนรูปโปรไฟล์
             </label>
-            <input id="avatar" name="avatar" type="file" accept="image/*" class="hidden">
+            <input id="avatar" name="avatar" type="file" accept="image/*" class="hidden" data-s3-kind="avatars">
             <p class="text-xs text-gray-400">ไฟล์รูป ไม่เกิน 2MB</p>
           </div>
 
@@ -131,5 +131,9 @@
     placeholder.classList.add("hidden");
   });
 </script>
+<% if (typeof storageMode !== "undefined" && storageMode === "s3") { %>
+  <!-- 3d: อัปโหลดรูปตรงไป S3 ด้วย pre-signed URL -->
+  <script src="/js/s3-upload.js" defer></script>
+<% } %>
 </body>
 </html>

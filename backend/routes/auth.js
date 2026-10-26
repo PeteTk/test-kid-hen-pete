@@ -4,6 +4,8 @@
 //   AUTH_MODE=cognito : ฟอร์ม /signin ส่งอีเมล/รหัสผ่านไป Cognito API จากฝั่ง server
 //                       ปุ่ม Google → /auth/google → หน้า Google โดยตรง → /auth/callback
 //                       ตั้งรหัสใหม่ครั้งแรก (/signin/new-password) + ลืมรหัสผ่าน (/forgot) อยู่ในเว็บเอง
+//                       เข้าด้วย Google ครั้งแรก (ยังไม่มีรหัสผ่าน) → บังคับตั้งรหัสที่ /auth/set-password
+//                       เพื่อให้ครั้งต่อไปกรอกอีเมล/รหัสผ่านในหน้าแรกได้ด้วย (service/cognito-password.js)
 //   AUTH_MODE=alb     : ALB ล็อกอินให้ก่อน (หน้า Cognito) — /login, /signin แค่ส่งต่อไปหน้าแรกของ role
 
 const express = require("express");
@@ -16,6 +18,7 @@ const devSeed = require("../repo/dev-seed");
 const { HOME, startSession } = require("../auth/session-user");
 const { cognitoLogoutUrl, ALB_COOKIES } = require("../auth/alb");
 const { cognitoAuth, thaiMessage } = require("../auth/cognito");
+const { cognitoPassword } = require("../service/cognito-password");
 
 const MODE = config.auth.mode;
 const alb = MODE === "alb";
@@ -26,9 +29,10 @@ const CALLBACK = () => `${BASE_URL()}/auth/callback`;
 
 const str = (v) => (typeof v === "string" ? v : "");
 
-// บัญชีทดลอง แสดงใต้ฟอร์มเฉพาะตอนพัฒนา (local + SQLite + ไม่ใช่ production)
+// บัญชีทดลอง แสดงใต้ฟอร์ม: ในเครื่อง (local + SQLite) หรือบน AWS เมื่อเปิด SEED_TEST_ACCOUNTS=true
 function devHint() {
-  return MODE === "local" && devSeed.allowed()
+  const show = (MODE === "local" && devSeed.allowed()) || (cognito && devSeed.testAccountsEnabled());
+  return show
     ? devSeed.DEV_ACCOUNTS.map((a) => ({ username: a.username, email: a.email, role: a.role }))
     : [];
 }
@@ -39,6 +43,7 @@ function view(extra = {}) {
     notice: null,
     login: "",
     devAccounts: devHint(),
+    devPassword: cognito ? "รหัสผ่านดูในเอกสารบัญชีทดลอง" : `รหัสผ่าน ${devSeed.DEV_PASSWORD}`,
     authMode: MODE,
     googleEnabled: cognito,
     ...extra,
@@ -80,11 +85,13 @@ router.get("/signin", (req, res) => {
 router.post("/signin", async (req, res, next) => {
   if (alb) return res.redirect("/");
 
-  const login = str(req.body.username).trim().toLowerCase();
+  let login = str(req.body.username).trim().toLowerCase();
   const password = str(req.body.password);
 
   try {
     if (cognito) {
+      // บัญชีทดลอง (SEED_TEST_ACCOUNTS=true): พิมพ์ username ได้ เช่น admin, staff01
+      if (!login.includes("@")) login = devSeed.emailForDevUsername(login) || login;
       if (!login.includes("@")) {
         return res.status(401).render("auth/signin", view({ error: "กรุณากรอกอีเมล", login }));
       }
@@ -262,7 +269,72 @@ router.get("/auth/callback", async (req, res, next) => {
       console.warn("[auth] Google token:", error.message);
       return fail("เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่");
     }
+
+    // ครั้งแรกที่เข้าด้วย Google (ยังไม่มีรหัสผ่าน) → บังคับตั้งรหัสก่อนเข้าใช้งาน
+    // (บัญชีที่ Admin ปิดไว้ไม่ต้องถาม — finishCognitoLogin ปฏิเสธเอง)
+    let mustSetPassword = false;
+    try {
+      const existing = await users.findByEmail(result.identity.email);
+      mustSetPassword = (!existing || existing.active) && await cognitoPassword().needsPassword(result.identity);
+    } catch (error) {
+      // ตรวจไม่ได้ (เช่น LabRole ไม่มีสิทธิ์ ListUsers) → ไม่ขวางการเข้าใช้งาน
+      console.warn("[auth] ตรวจบัญชีรหัสผ่านไม่สำเร็จ:", error.name || error.code, error.message);
+    }
+    if (mustSetPassword) {
+      req.session.pendingGoogle = { identity: result.identity, at: Date.now() };
+      return req.session.save(() => res.redirect("/auth/set-password"));
+    }
+
     await finishCognitoLogin(req, res, result.identity, "google");
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---------- ตั้งรหัสผ่านครั้งแรกหลังเข้าด้วย Google (cognito) ----------
+const GOOGLE_PENDING_TTL = 15 * 60 * 1000;
+
+function pendingGoogle(req) {
+  const p = req.session.pendingGoogle;
+  return p && Date.now() - p.at < GOOGLE_PENDING_TTL ? p : null;
+}
+
+router.get("/auth/set-password", (req, res) => {
+  if (!cognito) return res.redirect("/login");
+  const p = pendingGoogle(req);
+  if (!p) return res.redirect("/login");
+  res.render("auth/set-password", view({ email: p.identity.email }));
+});
+
+router.post("/auth/set-password", async (req, res, next) => {
+  if (!cognito) return res.redirect("/login");
+  const p = pendingGoogle(req);
+  if (!p) {
+    return res.status(401).render("auth/login", view({ error: "หมดเวลา กรุณากดปุ่ม Google อีกครั้ง" }));
+  }
+
+  const password = str(req.body.password);
+  const again = (status, error) =>
+    res.status(status).render("auth/set-password", view({ email: p.identity.email, error }));
+
+  if (password !== str(req.body.confirm)) return again(400, "รหัสผ่านทั้งสองช่องไม่ตรงกัน");
+
+  try {
+    let result;
+    try {
+      result = await cognitoPassword().setPasswordForGoogleUser(p.identity, password);
+    } catch (error) {
+      console.warn("[auth] ตั้งรหัสผ่านบัญชี Google:", error.name || error.code, error.message);
+      if (error.name === "InvalidPasswordException" || error.name === "InvalidParameterException") {
+        return again(400, thaiMessage({ name: "InvalidPasswordException" }));
+      }
+      return again(500, "ตั้งรหัสผ่านไม่สำเร็จ กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ");
+    }
+
+    delete req.session.pendingGoogle;
+    // role ตามกลุ่มของบัญชีรหัสผ่าน (เช่น Admin เพิ่มไว้เป็น Staff แต่บัญชี Google เดิมเป็น User)
+    const groups = Array.isArray(result?.groups) && result.groups.length ? result.groups : p.identity.groups;
+    await finishCognitoLogin(req, res, { ...p.identity, groups }, "google");
   } catch (error) {
     next(error);
   }

@@ -248,7 +248,7 @@
               </span>
             </label>
 
-            <input id="images" name="images" type="file" accept="image/*" multiple
+            <input id="images" name="images" type="file" accept="image/*" multiple data-s3-kind="requests"
        class="block w-full text-sm text-gray-500
               file:mr-4 file:h-10 file:px-5 file:rounded-lg file:border-0
               file:bg-[#1F2A8A] file:text-white file:text-sm file:font-semibold
@@ -377,5 +377,9 @@
     placeFields[0].setCustomValidity("");
   });
 </script>
+<% if (typeof storageMode !== "undefined" && storageMode === "s3") { %>
+  <!-- 3d: อัปโหลดรูปตรงไป S3 ด้วย pre-signed URL -->
+  <script src="/js/s3-upload.js" defer></script>
+<% } %>
 </body>
 </html>

@@ -2,8 +2,8 @@ const fs = require("node:fs");
 const path = require("path");
 const multer = require("multer");
 
-// ไฟล์อัปโหลดในเครื่อง (frontend/public/uploads) — avatar_key ใน DB = path ใต้โฟลเดอร์นี้ เช่น avatars/xxx.jpg
-// ขั้น 3d: ย้ายไป S3 (EC2 หลายเครื่องเห็นไฟล์ไม่ตรงกัน)
+// ไฟล์อัปโหลดในเครื่อง (STORAGE_MODE=local, frontend/public/uploads) — avatar_key ใน DB = path ใต้โฟลเดอร์นี้ เช่น avatars/xxx.jpg
+// 3d: บน AWS (STORAGE_MODE=s3) browser อัปโหลดตรงไป S3 ด้วย pre-signed URL แทน (service/storage.js) — multer ไม่ได้รับไฟล์
 const UPLOAD_ROOT = path.join(__dirname, "../../frontend/public/uploads");
 const AVATAR_DIR = path.join(UPLOAD_ROOT, "avatars");
 fs.mkdirSync(AVATAR_DIR, { recursive: true });

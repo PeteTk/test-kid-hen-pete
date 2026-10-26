@@ -3,13 +3,12 @@
 // คณะ/ฝ่าย/บทบาท แสดงอย่างเดียว (Admin เป็นคนแก้)
 
 const express = require("express");
-const fs = require("node:fs");
-const path = require("node:path");
 const router = express.Router();
 
 const usersRepo = require("../repo/users");
 const { avatarUrl } = require("../auth/session-user");
-const { avatarUpload, UPLOAD_ROOT } = require("../utils/upload");
+const { avatarUpload } = require("../utils/upload");
+const { storage } = require("../service/storage");
 
 // ต้อง login ก่อน (role ไหนก็ได้) — app.js โหลด req.account จาก DB ให้แล้ว
 router.use((req, res, next) => {
@@ -17,9 +16,16 @@ router.use((req, res, next) => {
   next();
 });
 
+// รูปเก่า/รูปที่บันทึกไม่สำเร็จ (ในเครื่อง = ไฟล์, บน AWS = object ใน S3)
 function removeAvatarFile(key) {
-  if (typeof key !== "string" || !/^avatars\/[\w.-]+$/.test(key)) return;
-  fs.rmSync(path.join(UPLOAD_ROOT, key), { force: true });
+  if (typeof key === "string" && key.startsWith("avatars/")) storage.remove(key);
+}
+
+// 3d: รูปจากฟอร์ม — บน AWS browser อัปโหลดตรงไป S3 แล้วส่ง avatar_keys มา (ตรวจว่าเป็นของผู้ใช้นี้ + มีไฟล์จริง)
+async function uploadedAvatar(req) {
+  if (!storage.s3) return req.file ? `avatars/${req.file.filename}` : null;
+  const [file] = await storage.confirm(req.body.avatar_keys, { userId: req.account.id, kind: "avatars" });
+  return file ? file.key : null;
 }
 
 async function renderProfile(res, me, extra = {}) {
@@ -52,10 +58,15 @@ router.get("/", async (req, res, next) => {
 // กด บันทึกข้อมูล
 router.post("/", (req, res, next) => {
   avatarUpload.single("avatar")(req, res, async (err) => {
-    const uploadedKey = req.file ? `avatars/${req.file.filename}` : null;
+    let uploadedKey = null;
 
     try {
       const me = req.account;
+      try {
+        uploadedKey = err ? null : await uploadedAvatar(req);
+      } catch (error) {
+        return renderProfile(res, me, { error: error.message });
+      }
 
       if (err) {
         removeAvatarFile(uploadedKey);

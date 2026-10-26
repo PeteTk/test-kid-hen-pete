@@ -1,4 +1,4 @@
-// service/events.js — แจ้งว่า "สถานะคำร้องเปลี่ยน" (UC-05/07)
+// service/events.js — แจ้งว่า "สถานะคำร้องเปลี่ยน" (UC-05/07) + สั่งวิเคราะห์ปัญหาที่พบบ่อย (3d, UC-08)
 //
 //   EVENTS_MODE=eventbridge (ค่าเริ่มต้นบน AWS):
 //     เว็บ --PutEvents(Source=kidhen.app, DetailType=TicketStatusChanged)--> EventBridge --> Lambda status.py
@@ -64,7 +64,24 @@ function createEvents({ mode = config.events.mode, client, source = config.aws.e
     return { via: "local", detail };
   }
 
-  return { ticketChanged, describe };
+  // 3d: Admin กด "ประมวลผลตอนนี้" → EventBridge rule run-analysis → Lambda analyze.py (เหมือนรอบตั้งเวลา)
+  async function runAnalysis(detail = {}) {
+    if (mode !== "eventbridge") throw new Error("EVENTS_MODE ไม่ใช่ eventbridge");
+    const { PutEventsCommand } = require("@aws-sdk/client-eventbridge");
+    const result = await api().send(
+      new PutEventsCommand({
+        Entries: [{ Source: source, DetailType: RUN_ANALYSIS, Detail: JSON.stringify(detail) }],
+      })
+    );
+    if (result.FailedEntryCount) {
+      throw new Error(result.Entries?.[0]?.ErrorMessage || "PutEvents failed");
+    }
+    return { via: "eventbridge" };
+  }
+
+  return { ticketChanged, runAnalysis, describe };
 }
 
-module.exports = { createEvents, events: createEvents(), DETAIL_TYPE, describe };
+const RUN_ANALYSIS = "RunAnalysis";
+
+module.exports = { createEvents, events: createEvents(), DETAIL_TYPE, RUN_ANALYSIS, describe };

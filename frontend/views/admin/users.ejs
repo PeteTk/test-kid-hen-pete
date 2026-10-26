@@ -54,6 +54,12 @@
               <option value="<%= r %>" <%= filters.role === r ? "selected" : "" %>><%= ROLE_LABEL[r] %></option>
             <% }) %>
           </select>
+
+          <!-- เพิ่ม (3b-3): Admin เพิ่มผู้ใช้ (UC-09) -->
+          <a href="/admin/users/new"
+             class="h-10 px-5 rounded-lg bg-[#F6A85A] border border-black text-sm font-bold flex items-center justify-center whitespace-nowrap hover:bg-[#F39A3E]">
+            + เพิ่มผู้ใช้
+          </a>
         </form>
 
         <% if (list.length === 0) { %>

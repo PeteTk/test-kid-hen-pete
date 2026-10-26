@@ -201,7 +201,22 @@ CREATE TABLE IF NOT EXISTS outbox (
   sent_at VARCHAR(30)
 );
 
--- เพิ่ม: ข้อความที่ Admin ตรวจข้อมูลส่วนบุคคลแล้วก่อนส่ง AI
+-- เพิ่ม (3d): ประวัติการประมวลผลปัญหาที่พบบ่อย (Lambda analyze.py หรือเว็บในโหมด local เขียน)
+CREATE TABLE IF NOT EXISTS ai_runs (
+  id VARCHAR(36) PRIMARY KEY,
+  trigger_source VARCHAR(30) NOT NULL,
+  started_at VARCHAR(30) NOT NULL,
+  finished_at VARCHAR(30),
+  success INTEGER,
+  processed INTEGER NOT NULL DEFAULT 0,
+  held INTEGER NOT NULL DEFAULT 0,
+  created_topics INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+
+-- ข้อความที่ผ่านการกรองข้อมูลส่วนบุคคลแล้วก่อนส่ง AI
+-- (3d) เว็บเขียนอัตโนมัติเมื่อส่ง/แก้คำร้อง: state = ready (ส่ง AI ได้) | held (เก็บภายใน ไม่ส่ง AI)
+--      sanitized_text = JSON {type, placeKey, symptoms} — ไม่มีข้อความต้นฉบับ ชื่อ หรือสถานที่จริง
 CREATE TABLE IF NOT EXISTS ai_inputs (
   ticket_id VARCHAR(36) PRIMARY KEY,
   sanitized_text TEXT NOT NULL,

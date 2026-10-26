@@ -78,7 +78,8 @@
           <p class="text-sm text-gray-500 mb-2">รูปภาพแนบ</p>
           <div class="flex flex-wrap gap-6 min-h-[124px]">
             <% (item.images || []).forEach(src => { %>
-              <a href="<%= src %>" target="_blank">
+              <!-- กดแล้วดูรูปในหน้านี้ (lightbox.js) -->
+              <a href="<%= src %>" data-lightbox="attachments" title="ดูรูปขนาดใหญ่">
                 <img src="<%= src %>" alt="รูปแนบ" class="w-[124px] h-[124px] object-cover rounded-lg bg-gray-100 hover:opacity-80">
               </a>
             <% }) %>
@@ -118,5 +119,6 @@
     </section>
   </main>
 </div>
+<script src="/js/lightbox.js" defer></script>
 </body>
 </html>

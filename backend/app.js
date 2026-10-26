@@ -40,7 +40,6 @@ app.get(["/health", "/healthz"], (req, res) => {
   });
 });
 
-app.use("/internal/ai", require("./routes/ai-job"));
 
 // ตั้งค่า EJS
 app.set("view engine", "ejs");
@@ -98,6 +97,14 @@ const alb =
     : null;
 
 app.use(createUserMiddleware({ mode: config.auth.mode, alb }));
+
+// 3d: ไฟล์ใน S3 (pre-signed URL) + บอก view ว่าใช้ S3 ไหม (ใส่ script อัปโหลดตรงไป S3)
+const { storage } = require("./service/storage");
+app.use((req, res, next) => {
+  res.locals.storageMode = storage.mode;
+  next();
+});
+app.use("/files", require("./routes/files"));
 
 app.use("/admin/faq", faqRoutes);
 

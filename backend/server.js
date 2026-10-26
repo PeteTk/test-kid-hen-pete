@@ -20,15 +20,21 @@ async function prepareDatabase() {
     await db.query("SELECT 1");
   }
 
-  // บัญชีทดลอง 5 คน (ทำงานเฉพาะ SQLite + ไม่ใช่ production)
+  // บัญชีทดลอง 40 บัญชี: ในเครื่อง (SQLite) หรือบน RDS เมื่อ SEED_TEST_ACCOUNTS=true
+  // (บน AWS รหัสผ่านอยู่ที่ Cognito ซึ่ง Terraform สร้างให้ — ตารางนี้เก็บ role + คณะ/ฝ่ายของ Staff)
   const seeded = await seedDevAccounts();
   if (seeded.created.length) {
-    console.log(`[dev] สร้างบัญชีทดลอง ${seeded.created.length} บัญชี (รหัส 1234) ดูรายชื่อที่หน้า Sign in`);
+    console.log(`[seed] สร้างบัญชีทดลอง ${seeded.created.length} บัญชี ดูรายชื่อที่หน้า Sign in`);
   }
 
   // คำร้องตัวอย่าง (3c) — ครั้งแรกที่ตาราง tickets ยังว่าง
   const samples = await seedSampleTickets();
   if (samples.created) console.log(`[dev] สร้างคำร้องตัวอย่าง ${samples.created} รายการ`);
+
+  // 3d: เตรียม ai_inputs ให้คำร้องที่ยังไม่มี (เช่น คำร้องตัวอย่าง / คำร้องก่อน 3d) — ทำเบื้องหลัง
+  require("./service/issues").syncAll().catch((error) =>
+    console.warn("[AI] เตรียม ai_inputs ไม่สำเร็จ:", error.message)
+  );
 }
 
 async function start() {

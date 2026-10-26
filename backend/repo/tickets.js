@@ -128,7 +128,9 @@ async function imagesOf(ticketId) {
     "SELECT object_key FROM attachments WHERE ticket_id=? ORDER BY created_at, object_key",
     [ticketId]
   );
-  return rows.map((r) => `/uploads/${r.object_key}`);
+  // 3d: ในเครื่อง /uploads/<key> · บน AWS /files/<key> (redirect ไป pre-signed URL ของ S3)
+  const { storage } = require("../service/storage");
+  return rows.map((r) => storage.url(r.object_key)).filter(Boolean);
 }
 
 async function historyOf(ticketId) {

@@ -13,6 +13,8 @@ const { TYPES, STATUSES } = require("../service/catalog");
 const { formatThaiDate } = require("../utils/date");
 const { UPLOAD_ROOT } = require("../utils/upload");
 const access = require("../service/faculty-access");
+const issues = require("../service/issues");
+const { storage } = require("../service/storage");
 
 // ---------- ตั้งค่าอัปโหลดรูป ----------
 // ในเครื่อง/EC2: frontend/public/uploads/requests (attachments.object_key = requests/<ไฟล์>) — ขั้น 3d ย้ายไป S3
@@ -115,6 +117,17 @@ router.post("/requests/new", (req, res, next) => {
       return renderNewForm(res, "เลือกประเภท ระบุหัวข้อไม่เกิน 200 และรายละเอียดไม่เกิน 5000 ตัวอักษร", req.body);
     }
 
+    // 3d: บน AWS browser อัปโหลดรูปตรงไป S3 แล้วส่งมาแค่ key (images_keys) → ตรวจเจ้าของ/ไฟล์จริงก่อนบันทึก
+    let images;
+    try {
+      images = storage.s3
+        ? await storage.confirm(req.body.images_keys, { userId: req.account.id, kind: "requests" })
+        : (req.files || []).map((file) => ({ key: `requests/${file.filename}`, mime: file.mimetype, size: file.size }));
+    } catch (error) {
+      removeUploads(req);
+      return renderNewForm(res, error.message, req.body);
+    }
+
     try {
       const ticket = await tickets.create({
         userId: req.account.id,
@@ -122,16 +135,17 @@ router.post("/requests/new", (req, res, next) => {
         type,
         title,
         detail,
-        images: (req.files || []).map((file) => ({
-          key: `requests/${file.filename}`,
-          mime: file.mimetype,
-          size: file.size,
-        })),
+        images,
       });
 
       // แจ้ง Admin + Staff ที่รับผิดชอบ (คณะ + หน่วยงานตามประเภท) — ล้มก็ไม่ทำให้การส่งคำร้องล้ม
       await notifications.newTicket(ticket).catch((e) =>
         console.error("[notify] แจ้งเตือนคำร้องใหม่ไม่สำเร็จ:", e.message)
+      );
+
+      // 3d: กรองข้อมูลส่วนบุคคลแล้วเตรียมให้ Lambda วิเคราะห์ (ai_inputs) — ล้มก็ไม่ทำให้การส่งคำร้องล้ม
+      await issues.syncTicket(ticket).catch((e) =>
+        console.error("[AI] เตรียมข้อมูลให้ AI ไม่สำเร็จ:", e.message)
       );
 
       res.redirect("/user/home?sent=1");

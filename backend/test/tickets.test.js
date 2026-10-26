@@ -57,9 +57,6 @@ function browser() {
   };
 }
 
-// ไฟล์หัวข้อปัญหาเก็บใน data/db — สำรอง/คืนหลังทดสอบ
-const ISSUE_FILE = path.join(__dirname, "../data/db/issue-summaries-v2.json");
-const backup = fs.existsSync(ISSUE_FILE) ? fs.readFileSync(ISSUE_FILE) : null;
 
 (async () => {
   await db.init();
@@ -257,7 +254,6 @@ const backup = fs.existsSync(ISSUE_FILE) ? fs.readFileSync(ISSUE_FILE) : null;
 
     await check("หัวข้อปัญหา (AI ปลอม): จัดกลุ่ม #0002+#0003 จาก DB → นศ.วิศวะเห็น → สนับสนุนแล้วได้คำร้องใหม่", async () => {
       const issues = require("../service/issues");
-      fs.rmSync(ISSUE_FILE, { force: true });
 
       const fakeAI = async ({ input }) => {
         const groups = new Map();
@@ -273,7 +269,19 @@ const backup = fs.existsSync(ISSUE_FILE) ? fs.readFileSync(ISSUE_FILE) : null;
         };
       };
 
-      await issues.runBatch(fakeAI);
+      const result = await issues.runBatch(fakeAI);
+      assert.ok(result.processed >= 2);
+      // 3d: หัวข้ออยู่ใน RDS/SQLite (ตาราง issues) + ประวัติใน ai_runs + ไม่มีข้อความต้นฉบับใน ai_inputs
+      const run = await db.query("SELECT success, processed FROM ai_runs ORDER BY started_at DESC LIMIT 1");
+      assert.equal(Number(run[0].success), 1);
+      for (const row of await db.query("SELECT sanitized_text FROM ai_inputs WHERE state='ready'")) {
+        assert.doesNotMatch(row.sanitized_text, /แอร์|E12|301|ไม่เย็น/);
+      }
+      // รอบสอง: ไม่มีอะไรใหม่ → ไม่เรียก AI
+      let called = false;
+      assert.equal((await issues.runBatch(async () => { called = true; })).processed, 0);
+      assert.equal(called, false);
+
       const topics = await issues.publicTopics();
       const aircon = topics.find((t) => t.count === 2);
       assert.ok(aircon, "ต้องมีหัวข้อที่รวม 2 คำร้อง");
@@ -302,12 +310,21 @@ const backup = fs.existsSync(ISSUE_FILE) ? fs.readFileSync(ISSUE_FILE) : null;
       // จุดที่พบต้องตรงกับหัวข้อ
       await assert.rejects(issues.support(aircon.id, another, { ...form, room: "999" }), /ไม่ตรงกับหัวข้อ/);
       assert.ok(id > 8);
+
+      // Admin: แก้ข้อความ / ซ่อน → นักศึกษาไม่เห็น
+      await issues.editTopic(aircon.id, { title: "แอร์ห้อง 301 ไม่เย็น", summary: "พบแอร์ไม่เย็น" });
+      assert.equal((await issues.detail(aircon.id)).item.title, "แอร์ห้อง 301 ไม่เย็น");
+      assert.equal((await issues.detail(aircon.id)).reports.length, 3);
+      await issues.setPublished(aircon.id, false);
+      assert.equal((await issues.publicTopics()).some((t) => t.id === aircon.id), false);
+      const dash = await issues.dashboard();
+      assert.equal(dash.running, false);
+      assert.equal(dash.lastRun.success, true);
+      assert.ok(Array.isArray(dash.held));
     });
   } finally {
     server.close();
     app.locals.sessionStore?.close();
-    if (backup) fs.writeFileSync(ISSUE_FILE, backup);
-    else fs.rmSync(ISSUE_FILE, { force: true });
   }
 
   console.log(`\nผ่านทั้งหมด ${passed} ข้อ`);

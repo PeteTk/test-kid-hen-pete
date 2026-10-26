@@ -20,6 +20,7 @@ const crypto = require("node:crypto");
 const db = require("../db");
 const users = require("../repo/users");
 const cognito = require("../auth/cognito");
+const passwordSvc = require("../service/cognito-password");
 const app = require("../app");
 
 let passed = 0;
@@ -162,7 +163,7 @@ function browser() {
 
   await check("ID token: ถูกต้อง → อีเมล/กลุ่ม, ผิด aud/iss/ประเภท/หมดอายุ/ลายเซ็น → ปฏิเสธ", async () => {
     const id = await auth.verifyIdToken(idToken({ sub: "s", email: "X@KMITL.ac.th", "cognito:groups": ["Staff"] }));
-    assert.deepEqual(id, { sub: "s", email: "x@kmitl.ac.th", name: "", groups: ["Staff"] });
+    assert.deepEqual(id, { sub: "s", email: "x@kmitl.ac.th", name: "", groups: ["Staff"], username: "", federated: null });
 
     const bad = [
       idToken({ sub: "s", email: "a@b.c", aud: "other" }),
@@ -222,8 +223,12 @@ function browser() {
       assert.match(r.body, /อีเมลหรือรหัสผ่านไม่ถูกต้อง/);
       r = await b.post("/signin", { username: "off@kmitl.ac.th", password: "Off12345" });
       assert.match(r.body, /ปิดการใช้งาน/);
-      r = await b.post("/signin", { username: "user01", password: "1234" });
+      r = await b.post("/signin", { username: "nobody", password: "1234" });
       assert.match(r.body, /กรุณากรอกอีเมล/);
+      // username ของบัญชีทดลอง → แปลงเป็นอีเมลก่อนส่ง Cognito
+      calls.length = 0;
+      r = await b.post("/signin", { username: "user01", password: "Kidhen1234" });
+      assert.equal(calls.find(([n]) => n === "InitiateAuth")[1].AuthParameters.USERNAME, "67010001@kmitl.ac.th");
     });
 
     await check("รหัสชั่วคราว → หน้าตั้งรหัสใหม่ของเว็บ → รหัสไม่ตรง/ไม่ผ่านนโยบาย → สำเร็จเข้า Staff", async () => {
@@ -290,6 +295,58 @@ function browser() {
       r = await b.get("/auth/callback?error=access_denied&error_description=" +
         encodeURIComponent("PreSignUp failed with error อนุญาตเฉพาะอีเมล @kmitl.ac.th."));
       assert.match(r.body, /@kmitl\.ac\.th/);
+    });
+
+    // ===== Google ครั้งแรก → บังคับตั้งรหัสผ่าน =====
+    const pw = [];
+    passwordSvc.use({
+      async needsPassword(identity) {
+        return Boolean(identity.federated) && !accounts[identity.email]?.password;
+      },
+      async setPasswordForGoogleUser(identity, password) {
+        if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/.test(password)) throw cognitoError("InvalidPasswordException");
+        pw.push([identity.email, password]);
+        accounts[identity.email] = { password, groups: identity.groups, sub: identity.sub };
+        return { linked: true };
+      },
+    });
+
+    await check("Google ครั้งแรก (ยังไม่มีรหัสผ่าน) → ตั้งรหัส → เข้าได้ทั้ง Google และอีเมล/รหัสผ่าน", async () => {
+      const b = browser();
+      const state = new URL((await b.get("/auth/google")).location).searchParams.get("state");
+      codes.set("code-new", idToken({
+        sub: "g-sub", email: "67070140@kmitl.ac.th", "cognito:groups": ["User"], "cognito:username": "Google_111",
+        identities: [{ providerName: "Google", userId: "111" }],
+      }));
+      let r = await b.get(`/auth/callback?code=code-new&state=${state}`);
+      assert.equal(r.location, "/auth/set-password");
+
+      // ยังไม่ได้เข้าใช้งานจนกว่าจะตั้งรหัส
+      assert.notEqual((await b.get("/user/home")).status, 200);
+      assert.match((await b.get("/auth/set-password")).body, /67070140@kmitl\.ac\.th/);
+
+      r = await b.post("/auth/set-password", { password: "Abcd1234", confirm: "Abcd9999" });
+      assert.match(r.body, /ไม่ตรงกัน/);
+      r = await b.post("/auth/set-password", { password: "short", confirm: "short" });
+      assert.match(r.body, /อย่างน้อย 8 ตัว/);
+      r = await b.post("/auth/set-password", { password: "Abcd1234", confirm: "Abcd1234" });
+      assert.equal(r.location, "/user/home");
+      assert.deepEqual(pw, [["67070140@kmitl.ac.th", "Abcd1234"]]);
+
+      // ครั้งต่อไปกรอกอีเมล/รหัสผ่านที่หน้าแรกได้
+      r = await browser().post("/signin", { username: "67070140@kmitl.ac.th", password: "Abcd1234" });
+      assert.equal(r.location, "/user/home");
+    });
+
+    await check("Google ที่มีรหัสผ่านแล้ว → เข้าเลย ไม่ถามรหัส · ไม่มี pending → /auth/set-password กลับ /login", async () => {
+      const b = browser();
+      const state = new URL((await b.get("/auth/google")).location).searchParams.get("state");
+      codes.set("code-has", idToken({
+        sub: "sub-admin", email: "67070054@kmitl.ac.th", "cognito:groups": ["Admin"],
+        identities: [{ providerName: "Google", userId: "222" }],
+      }));
+      assert.equal((await b.get(`/auth/callback?code=code-has&state=${state}`)).location, "/admin/dashboard");
+      assert.equal((await browser().get("/auth/set-password")).location, "/login");
     });
   } finally {
     server.close();

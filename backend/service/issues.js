@@ -1,98 +1,51 @@
-// แก้: สรุปเป็นหัวข้อ โดยไม่รวมงานหรือเปลี่ยนสถานะคำร้อง
-const {
-  randomUUID,
-  createHash,
-} = require("node:crypto");
+// service/issues.js — ปัญหาที่พบบ่อย (UC-04 / UC-08)
+//
+// แก้ (3d): ย้ายจากไฟล์ JSON บนดิสก์ EC2 มาที่ RDS และให้ Lambda เป็นตัวเรียก AI ตาม diagram
+//
+//   นักศึกษาส่ง/แก้คำร้อง ──> syncTicket(): กรองข้อมูลส่วนบุคคล + สกัดอาการ ──> ai_inputs (RDS)
+//        ready = ส่ง AI ได้ (sanitized_text = {type, placeKey, symptoms} ไม่มีข้อความต้นฉบับ)
+//        held  = เก็บภายใน (เรื่องบุคคล/ข้อมูลอ่อนไหว/ไม่มีอาการที่รองรับ/สถานที่ไม่ครบ) ไม่ส่ง AI
+//
+//   EventBridge (ตั้งเวลา) หรือ Admin กด "ประมวลผลตอนนี้" (PutEvents RunAnalysis)
+//        ──> Lambda analyze.py ──> Gemini ──> issues + issue_tickets (RDS) ──> SNS แจ้งทีม
+//   EVENTS_MODE=local (ในเครื่อง): runBatch() ในเว็บทำงานแบบเดียวกับ analyze.py (ใช้ GEMINI_API_KEY)
+//
+//   หน้าเว็บ (User / Admin) อ่าน-แก้ issues จาก RDS — EC2 กี่เครื่องก็เห็นข้อมูลชุดเดียวกัน
+
+const { createHash } = require("node:crypto");
+
+const db = require("../db");
+const config = require("../config");
 const { normalizeText } = require("../utils/text");
-
-const { load, save } = require("../data/store");
-
-// แก้ (3c): คำร้องอ่านจากตาราง tickets (repo/tickets.js) ทุกครั้งที่ใช้ — ฟังก์ชันที่แตะคำร้องจึงเป็น async
-// ส่วนหัวข้อ/ลิงก์ยังเก็บในไฟล์ JSON (data/db/issue-summaries-v2.json) จนกว่าจะย้ายไปตาราง issues (ขั้นถัดไป)
 const tickets = require("../repo/tickets");
 const notificationsRepo = require("../repo/notifications");
 const { STATUSES } = require("./catalog");
-
-const {
-  formatThaiShortDate,
-} = require("../utils/date");
-
 const { generateJSON } = require("./gemini");
-
-// เพิ่ม: ใช้ข้อมูลสถานที่และสิทธิ์คณะเดียวกับระบบแจ้งคำร้อง
 const locations = require("./location");
 const access = require("./faculty-access");
 
-// คงชื่อไฟล์เดิม เพื่ออ่านข้อมูลที่มีอยู่
-const FILE = "issue-summaries-v2";
+const norm = value => normalizeText(String(value || "")).trim();
+const placeOf = request => locations.forRequest(request);
+const sha256 = value => createHash("sha256").update(value).digest("hex");
 
-let running = false;
-
-const now = () => new Date().toISOString();
-
-const norm = value =>
-  normalizeText(String(value || "")).trim();
-
-// เพิ่ม: อ่านสถานที่แบบแยกคณะ อาคาร ห้อง
-const placeOf = request =>
-  locations.forRequest(request);
-
-// เพิ่ม: ใช้ hash เปรียบเทียบสถานที่
-// ไม่ส่งชื่อคณะหรือข้อความสถานที่ให้ Gemini
+// ไม่ส่งชื่อคณะหรือข้อความสถานที่ให้ AI — ส่งเฉพาะ hash
 function placeKey(place) {
-  return createHash("sha256")
-    .update(place.key)
-    .digest("hex");
+  return sha256(place.key);
 }
 
-// แก้: รวม locationInfo ในการตรวจว่าเนื้อหาเปลี่ยนหรือไม่
-// ไม่รวมสถานะ เพื่อไม่เรียก AI ใหม่เมื่อเปลี่ยนสถานะอย่างเดียว
+// เนื้อหาคำร้องที่มีผลกับการจัดกลุ่ม (ไม่รวมสถานะ: เปลี่ยนสถานะอย่างเดียวไม่ต้องวิเคราะห์ใหม่)
 function hash(request) {
-  return createHash("sha256")
-    .update(JSON.stringify([
-      3,
-      request.type,
-      request.title,
-      request.location,
-      request.detail,
-      request.locationInfo,
-    ]))
-    .digest("hex");
+  return sha256(JSON.stringify([
+    3, request.type, request.title, request.location, request.detail, request.locationInfo,
+  ]));
 }
 
-function write(data) {
-  save(FILE, data);
+// กลุ่มเดียวกัน = ประเภท + สถานที่ + ชุดอาการตรงกัน (Lambda analyze.py ใช้ค่าที่เว็บคำนวณไว้ ไม่คำนวณเอง)
+function labelKey({ type, placeKey: key, symptoms }) {
+  return sha256(`${type}|${key}|${[...symptoms].sort().join(",")}`);
 }
 
-// แก้ (3c): สถานที่รุ่น 4 ใช้รหัสคณะ 2 หลัก + คำร้องเริ่มใหม่ใน DB
-// ไฟล์หัวข้อรุ่นเก่า (อ้าง id คำร้อง mock) ใช้ต่อไม่ได้ → สำรองไว้แล้วเริ่มใหม่
-const LOCATION_VERSION = 4;
-
-function emptyData() {
-  return {
-    locationVersion: LOCATION_VERSION,
-    topics: [],
-    links: {},
-    held: {},
-    nextRunAt: null,
-    lastRun: null,
-  };
-}
-
-function read() {
-  const data = load(FILE, emptyData());
-
-  if (data.locationVersion === LOCATION_VERSION) {
-    return data;
-  }
-
-  const backupName = `${FILE}-before-location-v${LOCATION_VERSION}`;
-  if (!load(backupName, null)) save(backupName, data);
-
-  const fresh = emptyData();
-  write(fresh);
-  return fresh;
-}
+const HELD_REASON = "ข้อมูลสถานที่ยังไม่ครบ/เรื่องบุคคล/ข้อมูลละเอียดอ่อน/อาการยังไม่รองรับ";
 
 // คง: ส่งเฉพาะชื่ออาการที่กำหนดไว้ ไม่ส่งรายละเอียดต้นฉบับ
 const RULES = [
@@ -203,72 +156,168 @@ function prepareReport(request) {
   };
 }
 
-// คง: จำนวนและสถานะอ่านจากคำร้องจริง
-function topicView(topic, data, requests) {
-  const list = requests.filter(
-    request =>
-      data.links[request.id]?.topicId === topic.id &&
-      data.links[request.id].hash === hash(request)
-  );
 
-  const counts = Object.fromEntries(
-    STATUSES.map(status => [
-      status,
-      list.filter(
-        request => request.status === status
-      ).length,
-    ])
-  );
+// ---------- ai_inputs: เว็บเตรียมข้อมูลให้ AI (ไม่ส่งข้อความต้นฉบับ) ----------
+async function syncTicket(request) {
+  if (!request?.ticketId) return;
+  const h = hash(request);
 
+  const rows = await db.query("SELECT hash FROM ai_inputs WHERE ticket_id=?", [request.ticketId]);
+  if (rows[0]?.hash === h) return;
+
+  const report = prepareReport(request);
+  const place = placeOf(request);
+
+  await db.transaction(async (run) => {
+    // เนื้อหา/สถานที่เปลี่ยน → ออกจากหัวข้อเดิม แล้วรอจัดกลุ่มใหม่
+    await run("DELETE FROM issue_tickets WHERE ticket_id=? AND (hash IS NULL OR hash<>?)", [request.ticketId, h]);
+    await run("DELETE FROM ai_inputs WHERE ticket_id=?", [request.ticketId]);
+    await run(
+      "INSERT INTO ai_inputs(ticket_id,sanitized_text,reviewed_by,reviewed_at,hash,state,reason," +
+        "label_key,location_label,location_info) VALUES(?,?,?,?,?,?,?,?,?,?)",
+      report
+        ? [
+            request.ticketId,
+            JSON.stringify({ type: report.type, placeKey: report.placeKey, symptoms: report.symptoms }),
+            "system", db.now(), h, "ready", null,
+            labelKey(report), place.groupLabel.slice(0, 200), JSON.stringify(place),
+          ]
+        : [request.ticketId, "", "system", db.now(), h, "held", HELD_REASON, null, null, null]
+    );
+  });
+}
+
+// ทุกคำร้อง (ก่อนประมวลผล / ตอนเปิดเซิร์ฟเวอร์ — เผื่อคำร้องเก่าที่ยังไม่มี ai_inputs)
+async function syncAll() {
+  for (const request of await tickets.list()) {
+    await syncTicket(request);
+  }
+}
+
+// ---------- หัวข้อ (issues) ----------
+const parseJSON = (text, fallback) => {
+  try {
+    return text ? JSON.parse(text) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+function topicOf(row) {
   return {
-    ...topic,
-    count: list.length,
-
-    people: new Set(
-      list.map(request => request.owner).filter(Boolean)
-    ).size,
-
-    counts,
-
-    open: list.filter(
-      request => request.status !== "เสร็จสิ้น"
-    ).length,
+    id: row.id,
+    title: row.title,
+    summary: row.summary,
+    type: row.type,
+    location: row.location,
+    locationInfo: parseJSON(row.location_info, null),
+    placeKey: row.place_key,
+    symptoms: parseJSON(row.symptoms, []),
+    labelKey: row.label_key,
+    published: Number(row.published) === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at || row.created_at,
   };
 }
 
-// แก้: หัวข้อสาธารณะต้องมีข้อมูลสถานที่พร้อมตรวจสิทธิ์
-async function publicTopics() {
-  const data = read();
-  const requests = await tickets.list();
+const ISSUE_COLUMNS =
+  "i.id, i.title, i.summary, i.type, i.location, i.location_info, i.place_key, i.symptoms, " +
+  "i.label_key, i.published, i.created_at, i.updated_at";
 
-  return data.topics
-    .filter(topic => topic.published)
-    .map(topic => topicView(topic, data, requests))
-    .filter(
-      topic =>
-        topic.count &&
-        topic.locationInfo?.complete
-    )
+// หัวข้อ + จำนวน/สถานะจากคำร้องจริงที่ผูกอยู่ (เฉพาะหัวข้อจาก AI ที่มี label_key)
+async function topics({ publishedOnly = false, id = null } = {}) {
+  const where = ["i.label_key IS NOT NULL"];
+  const args = [];
+  if (publishedOnly) where.push("i.published=1");
+  if (id) {
+    where.push("i.id=?");
+    args.push(id);
+  }
+
+  const rows = await db.query(
+    `SELECT ${ISSUE_COLUMNS}, t.status AS t_status, t.user_id AS t_user FROM issues i ` +
+      "LEFT JOIN issue_tickets l ON l.issue_id=i.id LEFT JOIN tickets t ON t.id=l.ticket_id " +
+      `WHERE ${where.join(" AND ")} ORDER BY i.created_at`,
+    args
+  );
+
+  const map = new Map();
+  for (const row of rows) {
+    if (!map.has(row.id)) map.set(row.id, { topic: topicOf(row), statuses: [], people: new Set() });
+    const entry = map.get(row.id);
+    if (row.t_status) {
+      entry.statuses.push(row.t_status);
+      if (row.t_user) entry.people.add(row.t_user);
+    }
+  }
+
+  return [...map.values()].map(({ topic, statuses, people }) => ({
+    ...topic,
+    count: statuses.length,
+    people: people.size,
+    counts: Object.fromEntries(STATUSES.map((s) => [s, statuses.filter((x) => x === s).length])),
+    open: statuses.filter((s) => s !== "เสร็จสิ้น").length,
+  }));
+}
+
+// หัวข้อที่นักศึกษาเห็น: เผยแพร่ + มีคำร้อง + สถานที่ครบ (ตรวจสิทธิ์คณะที่ route อีกชั้น)
+async function publicTopics() {
+  return (await topics({ publishedOnly: true }))
+    .filter((topic) => topic.count && topic.locationInfo?.complete)
     .sort((a, b) => b.count - a.count);
 }
 
-async function dashboard() {
-  const data = read();
-  const requests = await tickets.list();
+// สถานะการประมวลผลจากตาราง ai_runs (Lambda หรือเว็บเขียน)
+const RUN_STALE_MS = 15 * 60 * 1000; // Lambda timeout 3 นาที — เกินนี้ถือว่าค้าง
 
-  const held = requests.filter(
-    request =>
-      data.held[request.id]?.hash === hash(request)
+async function runs() {
+  const rows = await db.query(
+    "SELECT id, trigger_source, started_at, finished_at, success, processed, held, created_topics, error " +
+      "FROM ai_runs ORDER BY started_at DESC LIMIT 5"
+  );
+  const latest = rows[0];
+  const running = Boolean(
+    latest && !latest.finished_at && Date.now() - Date.parse(latest.started_at) < RUN_STALE_MS
+  );
+  const done = rows.find((r) => r.finished_at);
+  const lastRun = done
+    ? {
+        startedAt: done.started_at,
+        finishedAt: done.finished_at,
+        success: Number(done.success) === 1,
+        processed: Number(done.processed),
+        heldCount: Number(done.held),
+        createdTopics: Number(done.created_topics),
+        trigger: done.trigger_source,
+        error: done.error || "",
+      }
+    : null;
+  return { running, lastRun };
+}
+
+async function dashboard() {
+  const all = await topics();
+
+  // คำร้องที่เก็บภายใน (ไม่ส่ง AI) และไม่ได้ผูกกับหัวข้อ
+  const heldRows = await db.query(
+    "SELECT a.ticket_id FROM ai_inputs a LEFT JOIN issue_tickets l ON l.ticket_id=a.ticket_id " +
+      "WHERE a.state='held' AND l.ticket_id IS NULL"
+  );
+  const heldIds = new Set(heldRows.map((r) => r.ticket_id));
+  const held = heldIds.size ? (await tickets.list()).filter((r) => heldIds.has(r.ticketId)) : [];
+
+  const pendingRows = await db.query(
+    "SELECT COUNT(*) AS n FROM ai_inputs a LEFT JOIN issue_tickets l ON l.ticket_id=a.ticket_id " +
+      "WHERE a.state='ready' AND (l.ticket_id IS NULL OR l.hash IS NULL OR l.hash<>a.hash)"
   );
 
   return {
-    topics: data.topics.map(
-      topic => topicView(topic, data, requests)
-    ),
+    topics: all,
     held,
-    running,
-    nextRunAt: data.nextRunAt,
-    lastRun: data.lastRun,
+    pending: Number(pendingRows[0]?.n ?? 0),
+    ...(await runs()),
+    nextRunAt: null,
+    mode: config.events.mode,
   };
 }
 
@@ -419,285 +468,179 @@ function validateGroups(output, reports, candidates) {
   }
 }
 
-// คง: ทำเฉพาะข้อมูลใหม่หรือเนื้อหาเปลี่ยน รวมงานที่เสร็จแล้ว
-async function runBatch(analyze = generateJSON) {
-  if (running) {
-    throw new Error("กำลังประมวลผลอยู่");
+
+// ---------- ประมวลผล (โหมด local ในเครื่อง — บน AWS Lambda analyze.py ทำแบบเดียวกัน) ----------
+let localRunning = false;
+
+async function pendingInputs(limit = 150) {
+  const rows = await db.query(
+    "SELECT a.ticket_id, a.sanitized_text, a.hash, a.label_key, a.location_label, a.location_info " +
+      "FROM ai_inputs a LEFT JOIN issue_tickets l ON l.ticket_id=a.ticket_id " +
+      "WHERE a.state='ready' AND (l.ticket_id IS NULL OR l.hash IS NULL OR l.hash<>a.hash) " +
+      // LIMIT ใส่ตัวเลขตรง (mysql2 execute ไม่รับ LIMIT ?) — limit มาจากโค้ดเท่านั้น
+      `ORDER BY a.reviewed_at LIMIT ${Math.max(1, Math.trunc(Number(limit)) || 150)}`
+  );
+  return rows.map((r) => ({ ...r, report: parseJSON(r.sanitized_text, null) })).filter((r) => r.report);
+}
+
+async function saveGroups(output, chunk) {
+  let created = 0;
+  // ตรวจว่าคำร้องไม่ถูกแก้ระหว่างรอ AI
+  for (const item of chunk) {
+    const rows = await db.query("SELECT hash FROM ai_inputs WHERE ticket_id=?", [item.ticket_id]);
+    if (rows[0]?.hash !== item.hash) throw new Error("คำร้องเปลี่ยนระหว่างวิเคราะห์ กรุณาประมวลผลใหม่");
   }
 
-  running = true;
+  await db.transaction(async (run) => {
+    for (const group of output.groups) {
+      const first = chunk[group.ids[0] - 1];
+      let found = await run("SELECT id FROM issues WHERE label_key=? ORDER BY created_at LIMIT 1", [first.label_key]);
+      let issueId = found[0]?.id;
 
-  let processed = 0;
-  let heldCount = 0;
-
-  const startedAt = now();
-
-  try {
-    const data = read();
-    const pending = [];
-    let requests = await tickets.list();
-
-    for (const request of requests) {
-      if (
-        data.links[request.id]?.hash === hash(request)
-      ) {
-        continue;
+      if (!issueId) {
+        issueId = db.id();
+        await run(
+          "INSERT INTO issues(id,title,summary,location,status,clarification,published,source,created_at," +
+            "type,place_key,symptoms,label_key,location_info,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+          [
+            issueId, group.title.trim(), group.summary.trim(), first.location_label || "-", "เผยแพร่", "", 1, "ai",
+            db.now(), first.report.type, first.report.placeKey, JSON.stringify(first.report.symptoms),
+            first.label_key, first.location_info, db.now(),
+          ]
+        );
+        created++;
+      } else {
+        // ไม่ทับข้อความที่ Admin แก้ หรือเปิดหัวข้อที่ซ่อนไว้
+        await run("UPDATE issues SET updated_at=? WHERE id=?", [db.now(), issueId]);
       }
 
-      const report = prepareReport(request);
-
-      if (report) {
-        pending.push({
-          ...report,
-          hash: hash(request),
-        });
-      } else {
-        data.held[request.id] = {
-          hash: hash(request),
-          reason:
-            "ข้อมูลสถานที่ยังไม่ครบ/เรื่องบุคคล/" +
-            "ข้อมูลละเอียดอ่อน/อาการยังไม่รองรับ",
-        };
-
-        heldCount++;
+      for (const index of group.ids) {
+        const item = chunk[index - 1];
+        await run("DELETE FROM issue_tickets WHERE ticket_id=?", [item.ticket_id]);
+        await run("INSERT INTO issue_tickets(issue_id,ticket_id,hash) VALUES(?,?,?)", [issueId, item.ticket_id, item.hash]);
       }
     }
+  });
+  return created;
+}
 
-    write(data);
+async function runBatch(analyze = generateJSON, { trigger = "local" } = {}) {
+  if (localRunning) throw new Error("กำลังประมวลผลอยู่");
+  localRunning = true;
 
-    // คง: ครั้งละ 10 คำร้อง แต่ทำคิวให้ครบ
-    for (
-      let index = 0;
-      index < pending.length;
-      index += 10
-    ) {
+  const runId = db.id();
+  let processed = 0;
+  let createdTopics = 0;
+  await db.query("INSERT INTO ai_runs(id,trigger_source,started_at) VALUES(?,?,?)", [runId, trigger, db.now()]);
+
+  try {
+    await syncAll();
+    const pending = await pendingInputs();
+
+    // ครั้งละ 10 คำร้อง แต่ทำคิวให้ครบ — id ที่ส่ง AI เป็นเลขลำดับในชุด (ไม่ส่ง id จริง)
+    for (let index = 0; index < pending.length; index += 10) {
       const chunk = pending.slice(index, index + 10);
-      const current = read();
+      const reports = chunk.map((item, i) => ({ id: i + 1, ...item.report }));
 
-      const candidates = current.topics
-        .filter(topic =>
-          chunk.some(report =>
-            sameLabels(report, topic)
-          )
-        )
-        .map(topic => ({
-          id: topic.id,
-          type: topic.type,
-          placeKey: topic.placeKey,
-          symptoms: topic.symptoms,
-        }));
+      const keys = [...new Set(chunk.map((item) => item.label_key))];
+      const candidates = (await db.query(
+        `SELECT id, type, place_key, symptoms FROM issues WHERE label_key IN (${keys.map(() => "?").join(",")})`,
+        keys
+      )).map((row) => ({ id: row.id, type: row.type, placeKey: row.place_key, symptoms: parseJSON(row.symptoms, []) }));
 
-      // ไม่ส่ง hash เนื้อหาคำร้องให้ AI
-      const reports = chunk.map(
-        ({ hash, ...report }) => report
-      );
-
-      const output = await analyze({
-        instructions,
-        schema,
-        input: {
-          reports,
-          candidates,
-        },
-      });
-
+      const output = await analyze({ instructions, schema, input: { reports, candidates } });
       validateGroups(output, reports, candidates);
-
-      // คง: ตรวจว่าคำร้องไม่ถูกแก้ระหว่างรอ API (อ่านจาก DB ใหม่)
-      requests = await tickets.list();
-      const changed = chunk.some(report =>
-        !requests.some(
-          request =>
-            request.id === report.id &&
-            hash(request) === report.hash
-        )
-      );
-
-      if (changed) {
-        throw new Error(
-          "คำร้องเปลี่ยนระหว่างวิเคราะห์ กรุณาประมวลผลใหม่"
-        );
-      }
-
-      // อ่านใหม่เพื่อรักษาการแก้ไข/ซ่อนของ Admin ระหว่างรอ API
-      const latest = read();
-
-      for (const group of output.groups) {
-        const labels = reports.find(
-          report => report.id === group.ids[0]
-        );
-
-        let topic = latest.topics.find(
-          item => sameLabels(item, labels)
-        );
-
-        if (!topic) {
-          const source = requests.find(
-            request => request.id === labels.id
-          );
-
-          const place = placeOf(source);
-
-          topic = {
-            id: randomUUID(),
-            title: group.title.trim(),
-            summary: group.summary.trim(),
-
-            type: labels.type,
-
-            // แก้: สถานที่มาจากคำร้องจริง ไม่ใช่คำตอบ AI
-            location: place.groupLabel,
-            locationInfo: place,
-            placeKey: labels.placeKey,
-
-            symptoms: labels.symptoms,
-            published: true,
-            createdAt: now(),
-            updatedAt: now(),
-          };
-
-          latest.topics.push(topic);
-        }
-
-        // ไม่ทับข้อความที่ Admin แก้ หรือเปิดหัวข้อที่ซ่อนไว้
-        topic.updatedAt = now();
-
-        for (const id of group.ids) {
-          latest.links[id] = {
-            topicId: topic.id,
-            hash: chunk.find(
-              report => report.id === id
-            ).hash,
-          };
-
-          delete latest.held[id];
-        }
-      }
-
-      // บันทึกทีละชุด ไม่เรียกชุดที่สำเร็จแล้วซ้ำ
-      write(latest);
+      createdTopics += await saveGroups(output, chunk);
       processed += chunk.length;
     }
 
-    const latest = read();
-
-    latest.lastRun = {
-      startedAt,
-      finishedAt: now(),
-      success: true,
-      processed,
-      heldCount,
-    };
-
-    write(latest);
-
-    return { processed, heldCount };
+    const held = await db.query("SELECT COUNT(*) AS n FROM ai_inputs WHERE state='held'");
+    await db.query(
+      "UPDATE ai_runs SET finished_at=?, success=1, processed=?, held=?, created_topics=? WHERE id=?",
+      [db.now(), processed, Number(held[0]?.n ?? 0), createdTopics, runId]
+    );
+    return { processed, createdTopics };
   } catch (error) {
-    const latest = read();
-
-    latest.lastRun = {
-      startedAt,
-      finishedAt: now(),
-      success: false,
-      processed,
-      heldCount,
-      error: error.message,
-    };
-
-    write(latest);
+    await db.query(
+      "UPDATE ai_runs SET finished_at=?, success=0, processed=?, created_topics=?, error=? WHERE id=?",
+      [db.now(), processed, createdTopics, String(error.message).slice(0, 1000), runId]
+    ).catch(() => {});
     throw error;
   } finally {
-    running = false;
+    localRunning = false;
   }
 }
 
-// คง: Admin แก้ข้อความสรุปได้ ไม่เปลี่ยนสถานะคำร้อง
-function editTopic(id, form) {
-  const data = read();
-  const topic = data.topics.find(item => item.id === id);
+// Admin กด "ประมวลผลตอนนี้"
+//   eventbridge: เตรียม ai_inputs แล้วส่ง RunAnalysis → EventBridge → Lambda analyze.py (ไม่รอผล)
+//   local      : รัน runBatch() ในเว็บ (เบื้องหลัง)
+async function requestRun({ by, events = require("./events").events } = {}) {
+  if ((await runs()).running || localRunning) throw new Error("กำลังประมวลผลอยู่");
+  await syncAll();
 
+  if (config.events.mode === "eventbridge") {
+    try {
+      await events.runAnalysis({ requestedBy: by || null });
+      return { via: "eventbridge" };
+    } catch (error) {
+      // PutEvents ไม่ได้ (เช่น สิทธิ์) → ประมวลผลในเว็บแทน (EC2 มี GEMINI_API_KEY เหมือนกัน)
+      console.error("[AI] ส่ง RunAnalysis เข้า EventBridge ไม่สำเร็จ ประมวลผลในเว็บแทน:", error.message);
+    }
+  }
+
+  runBatch().catch((error) => console.error("[AI]", error.message));
+  return { via: "local" };
+}
+
+// ---------- Admin แก้หัวข้อ (UC-08) ----------
+async function editTopic(id, form) {
   const title = norm(form.title);
   const summary = norm(form.summary);
 
-  if (
-    !topic ||
-    !title ||
-    title.length > 200 ||
-    !summary ||
-    summary.length > 1200
-  ) {
-    throw new Error(
-      "กรอกหัวข้อและสรุปตามขนาดที่กำหนด"
-    );
+  if (!title || title.length > 200 || !summary || summary.length > 1200) {
+    throw new Error("กรอกหัวข้อและสรุปตามขนาดที่กำหนด");
   }
 
-  topic.title = title;
-  topic.summary = summary;
-  topic.updatedAt = now();
-
-  write(data);
+  const result = await db.query("UPDATE issues SET title=?, summary=?, updated_at=? WHERE id=?", [title, summary, db.now(), id]);
+  if (!db.affected(result)) throw new Error("ไม่พบหัวข้อ");
 }
 
-function setPublished(id, published) {
-  const data = read();
-  const topic = data.topics.find(item => item.id === id);
+async function setPublished(id, published) {
+  const result = await db.query(
+    "UPDATE issues SET published=?, status=?, updated_at=? WHERE id=?",
+    [published ? 1 : 0, published ? "เผยแพร่" : "ซ่อน", db.now(), id]
+  );
+  if (!db.affected(result)) throw new Error("ไม่พบหัวข้อ");
+}
 
-  if (!topic) {
-    throw new Error("ไม่พบหัวข้อ");
-  }
-
-  topic.published = published;
-  topic.updatedAt = now();
-
-  write(data);
+async function linkedTicketIds(issueId) {
+  const rows = await db.query("SELECT ticket_id FROM issue_tickets WHERE issue_id=?", [issueId]);
+  return new Set(rows.map((r) => r.ticket_id));
 }
 
 async function detail(id) {
-  const data = read();
-  const topic = data.topics.find(item => item.id === id);
+  const [item] = await topics({ id });
+  if (!item) throw new Error("ไม่พบหัวข้อ");
 
-  if (!topic) {
-    throw new Error("ไม่พบหัวข้อ");
-  }
-
-  const requests = await tickets.list();
-
-  return {
-    item: topicView(topic, data, requests),
-
-    reports: requests.filter(
-      request =>
-        data.links[request.id]?.topicId === id &&
-        data.links[request.id].hash === hash(request)
-    ),
-  };
+  const ids = await linkedTicketIds(id);
+  return { item, reports: (await tickets.list()).filter((r) => ids.has(r.ticketId)) };
 }
 
-// แจ้งปัญหาใต้หัวข้อเดิมด้วยสถานที่แบบใหม่ — ตรวจสิทธิ์คณะใน service อีกชั้น
-// แก้ (3c): account = ผู้ใช้จาก DB (req.account), สร้างคำร้องในตาราง tickets
+// ---------- นักศึกษาแจ้งปัญหาใต้หัวข้อเดิม (UC-04) ----------
 async function support(id, account, form) {
-  const data = read();
-
-  const topic = data.topics.find(
-    item => item.id === id && item.published
-  );
+  const [topic] = await topics({ id, publishedOnly: true });
 
   if (!topic || !topic.locationInfo?.complete) {
     throw new Error("ไม่พบหัวข้อที่เผยแพร่พร้อมสถานที่");
   }
 
   access.assertPlace(account, topic.locationInfo);
-
   const locationInfo = access.fromStudentForm(account, form);
 
-  const detail = norm(form.detail);
+  const detailText = norm(form.detail);
   const occurredAt = String(form.occurredAt || "");
 
-  if (
-    !detail ||
-    detail.length > 2000 ||
-    !Number.isFinite(Date.parse(occurredAt))
-  ) {
+  if (!detailText || detailText.length > 2000 || !Number.isFinite(Date.parse(occurredAt))) {
     throw new Error("กรอกจุดที่พบ รายละเอียด และวันเวลาให้ครบ");
   }
 
@@ -705,15 +648,13 @@ async function support(id, account, form) {
     throw new Error("จุดที่พบไม่ตรงกับหัวข้อนี้ กรุณาแจ้งคำร้องใหม่");
   }
 
-  // คง: คนเดิมแจ้งซ้ำได้หลังงานก่อนเสร็จ
-  const mine = await tickets.list({ userId: account.id });
-  const alreadyOpen = mine.some(
-    request =>
-      data.links[request.id]?.topicId === id &&
-      request.status !== "เสร็จสิ้น"
+  // คนเดิมแจ้งซ้ำได้หลังงานก่อนเสร็จ
+  const open = await db.query(
+    "SELECT COUNT(*) AS n FROM issue_tickets l JOIN tickets t ON t.id=l.ticket_id " +
+      "WHERE l.issue_id=? AND t.user_id=? AND t.status<>?",
+    [id, account.id, "เสร็จสิ้น"]
   );
-
-  if (alreadyOpen) {
+  if (Number(open[0]?.n ?? 0) > 0) {
     throw new Error("คุณมีรายงานที่ยังไม่เสร็จในหัวข้อนี้แล้ว");
   }
 
@@ -722,7 +663,7 @@ async function support(id, account, form) {
     place: locationInfo,
     type: topic.type,
     title: topic.title,
-    detail,
+    detail: detailText,
     occurredAt,
   });
 
@@ -730,13 +671,10 @@ async function support(id, account, form) {
     console.error("[notify] แจ้งเตือนคำร้องใหม่ไม่สำเร็จ:", error.message)
   );
 
-  // เชื่อมทันที ไม่ต้องเรียก AI (อ่านไฟล์ใหม่ เผื่อมีการแก้ระหว่างรอ DB)
-  const latest = read();
-  latest.links[request.id] = {
-    topicId: id,
-    hash: hash(request),
-  };
-  write(latest);
+  // เชื่อมทันที ไม่ต้องรอ AI
+  await syncTicket(request);
+  await db.query("DELETE FROM issue_tickets WHERE ticket_id=?", [request.ticketId]);
+  await db.query("INSERT INTO issue_tickets(issue_id,ticket_id,hash) VALUES(?,?,?)", [id, request.ticketId, hash(request)]);
 
   return request.id;
 }
@@ -744,23 +682,29 @@ async function support(id, account, form) {
 // Admin เติม/แก้สถานที่ให้คำร้อง — ไม่เปลี่ยนหัวข้อ รายละเอียด หรือสถานะงาน
 async function updateLocation(id, form) {
   const request = await tickets.findBySeq(id);
+  if (!request) throw new Error("ไม่พบคำร้อง");
 
-  if (!request) {
-    throw new Error("ไม่พบคำร้อง");
-  }
-
-  await tickets.updateLocation(request.ticketId, locations.fromForm(form));
+  const updated = await tickets.updateLocation(request.ticketId, locations.fromForm(form));
+  await syncTicket(updated);
 }
 
 module.exports = {
-  read,
-  write,
   dashboard,
   publicTopics,
   detail,
   runBatch,
+  requestRun,
   editTopic,
   setPublished,
   support,
   updateLocation,
+  syncTicket,
+  syncAll,
+  // ใช้ในการทดสอบ / ตรวจว่าตรงกับ Lambda
+  prepareReport,
+  labelKey,
+  placeKey,
+  validateGroups,
+  instructions,
+  schema,
 };

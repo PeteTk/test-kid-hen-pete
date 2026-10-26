@@ -63,6 +63,11 @@ const config = {
     eventSource: str("EVENT_SOURCE", "kidhen.app"),
   },
 
+  // เพิ่ม (3d): ไฟล์แนบ/รูปโปรไฟล์ → s3 (pre-signed URL ตาม diagram) หรือ local (frontend/public/uploads)
+  storage: {
+    mode: str("STORAGE_MODE", "local"),
+  },
+
   // เพิ่ม (3c): สถานะคำร้องเปลี่ยน → eventbridge (PutEvents → Lambda status.py) หรือ local (เขียนแจ้งเตือนเอง)
   events: {
     mode: str("EVENTS_MODE", production ? "eventbridge" : "local"),
@@ -94,6 +99,14 @@ function validate(cfg) {
     cfg.port > 65535
   ) {
     errors.push("PORT ต้องเป็นตัวเลขระหว่าง 1–65535");
+  }
+
+  if (!["local", "s3"].includes(cfg.storage.mode)) {
+    errors.push('STORAGE_MODE ต้องเป็น "local" หรือ "s3"');
+  }
+
+  if (cfg.storage.mode === "s3" && !cfg.aws.s3Bucket) {
+    errors.push("STORAGE_MODE=s3 ต้องมี S3_BUCKET");
   }
 
   if (!["local", "eventbridge"].includes(cfg.events.mode)) {

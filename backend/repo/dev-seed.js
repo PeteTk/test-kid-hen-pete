@@ -57,16 +57,23 @@ function allowed() {
   return !db.mysql && process.env.NODE_ENV !== "production";
 }
 
-// "user01" → "67010001@kmitl.ac.th" (เฉพาะเมื่อ allowed) ไม่พบคืน null
+// บัญชีทดลองบน AWS (RDS): Terraform ตั้ง SEED_TEST_ACCOUNTS=true เมื่อ create_test_accounts = true
+// และสร้างบัญชีเดียวกันใน Cognito ให้ (รหัสผ่านอยู่ที่ Cognito — ในตาราง users ไม่ใช้)
+// ตารางนี้ต้องมีไว้เพราะ Staff ต้องมี คณะ/ฝ่าย (user_units) ซึ่ง Cognito ไม่มี
+function testAccountsEnabled() {
+  return allowed() || String(process.env.SEED_TEST_ACCOUNTS || "").toLowerCase() === "true";
+}
+
+// "user01" → "67010001@kmitl.ac.th" (เฉพาะเมื่อเปิดบัญชีทดลอง) ไม่พบคืน null
 function emailForDevUsername(username) {
-  if (!allowed()) return null;
+  if (!testAccountsEnabled()) return null;
   const key = String(username || "").trim().toLowerCase();
   return DEV_ACCOUNTS.find((a) => a.username === key)?.email ?? null;
 }
 
 // เรียกซ้ำได้ ข้ามบัญชีที่มีอยู่แล้ว (ไม่เขียนทับรหัสผ่านหรือ units ที่แก้ไว้)
 async function seedDevAccounts() {
-  if (!allowed()) return { skipped: true, created: [] };
+  if (!testAccountsEnabled()) return { skipped: true, created: [] };
 
   const created = [];
   // ใช้ hash เดียวกันทุกบัญชี (บัญชีทดลอง) เพื่อให้เปิดเซิร์ฟเวอร์เร็ว
@@ -75,15 +82,21 @@ async function seedDevAccounts() {
   for (const account of DEV_ACCOUNTS) {
     if (await users.findByEmail(account.email)) continue;
 
-    const user = await users.create({
-      email: account.email,
-      name: account.name,
-      role: account.role,
-      passwordHash,
-    });
+    try {
+      const user = await users.create({
+        email: account.email,
+        name: account.name,
+        role: account.role,
+        passwordHash,
+      });
 
-    if (account.units) await users.setUnits(user.id, account.units);
-    created.push(account.email);
+      if (account.units) await users.setUnits(user.id, account.units);
+      created.push(account.email);
+    } catch (error) {
+      // RDS: EC2 อีกเครื่องสร้างไปพร้อมกัน (UNIQUE email) → ข้าม
+      if (allowed()) throw error;
+      console.warn(`[seed] ข้าม ${account.email}:`, error.message);
+    }
   }
 
   return { skipped: false, created };
@@ -124,7 +137,7 @@ const SAMPLE_TICKETS = [
 ];
 
 async function seedSampleTickets() {
-  if (!allowed()) return { skipped: true, created: 0 };
+  if (!testAccountsEnabled()) return { skipped: true, created: 0 };
 
   const rows = await db.query("SELECT COUNT(*) AS n FROM tickets");
   if (Number(rows[0].n) > 0) return { skipped: true, created: 0 };
@@ -139,6 +152,7 @@ async function seedSampleTickets() {
 
   for (const sample of SAMPLE_TICKETS) {
     const owner = await byName(sample.by);
+    if (!owner) continue; // บัญชีทดลองยังสร้างไม่ครบ
     let ticket = await tickets.create({
       userId: owner.id,
       place: makePlace(sample.place, true),
@@ -150,6 +164,7 @@ async function seedSampleTickets() {
 
     for (const step of sample.then || []) {
       const actor = await byName(step.by);
+      if (!actor) break;
       const result = await tickets.update(ticket.ticketId, {
         status: step.status, note: step.note, actorId: actor.id,
       });
@@ -162,6 +177,6 @@ async function seedSampleTickets() {
 }
 
 module.exports = {
-  seedDevAccounts, seedSampleTickets, allowed, emailForDevUsername,
+  seedDevAccounts, seedSampleTickets, allowed, testAccountsEnabled, emailForDevUsername,
   DEV_ACCOUNTS, BASE_ACCOUNTS, FACULTY_ACCOUNTS, DEV_PASSWORD,
 };

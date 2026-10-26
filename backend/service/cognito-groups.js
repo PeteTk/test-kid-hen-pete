@@ -5,13 +5,13 @@
 //
 // โหมด local (ในเครื่อง) ไม่เรียก AWS: คืน { skipped: true }
 // สิทธิ์ที่ใช้: ListUsers, AdminListGroupsForUser, AdminAddUserToGroup, AdminRemoveUserFromGroup,
-//             AdminDisableUser (ตรวจได้ด้วย check_lab_permissions.sh ฝั่ง Terraform)
+//             AdminDisableUser, AdminCreateUser (3b-3) (ตรวจได้ด้วย check_lab_permissions.sh ฝั่ง Terraform)
 
 const config = require("../config");
 
 const ROLE_GROUP = { ADMIN: "Admin", STAFF: "Staff", USER: "User" };
 
-function createCognitoGroups({ userPoolId, region, client } = {}) {
+function createCognitoGroups({ userPoolId, region, client, send: sendImpl } = {}) {
   const enabled = Boolean(userPoolId);
   let sdk = null;
 
@@ -25,6 +25,7 @@ function createCognitoGroups({ userPoolId, region, client } = {}) {
   }
 
   async function send(name, input) {
+    if (sendImpl) return sendImpl(name, input); // test
     const { lib, client } = api();
     return client.send(new lib[`${name}Command`](input));
   }
@@ -90,7 +91,40 @@ function createCognitoGroups({ userPoolId, region, client } = {}) {
     return { skipped: false, updated: usernames.length };
   }
 
-  return { enabled, setRole, disable };
+  // 3b-3: Admin เพิ่มผู้ใช้ — สร้างบัญชีอีเมล/รหัสผ่านใน Cognito + ใส่กลุ่มตาม role
+  // Cognito ส่งรหัสผ่านชั่วคราวทางอีเมลให้ (ครั้งแรกเว็บพาไปหน้า "ตั้งรหัสผ่านใหม่")
+  // หรือกด Google ด้วยอีเมลเดียวกัน → ถูกขอให้ตั้งรหัส แล้วรวมเป็นบัญชีเดียว
+  // คืน { skipped, existed } — existed = มีบัญชีรหัสผ่านใน Cognito อยู่แล้ว (แค่ย้ายกลุ่ม ไม่ส่งอีเมลซ้ำ)
+  async function createUser({ email, name, role }) {
+    if (!enabled) return { skipped: true, existed: false };
+    if (!ROLE_GROUP[role]) throw new Error("role ไม่ถูกต้อง");
+
+    const clean = String(email || "").trim().toLowerCase();
+    let existed = false;
+
+    try {
+      const attrs = [
+        { Name: "email", Value: clean },
+        { Name: "email_verified", Value: "true" },
+      ];
+      if (name) attrs.push({ Name: "name", Value: String(name).slice(0, 150) });
+      await send("AdminCreateUser", {
+        UserPoolId: userPoolId,
+        Username: clean,
+        UserAttributes: attrs,
+        DesiredDeliveryMediums: ["EMAIL"],
+      });
+    } catch (error) {
+      if (error.name !== "UsernameExistsException") throw error;
+      existed = true;
+    }
+
+    // ย้าย/ใส่กลุ่มให้ทุกบัญชีของอีเมลนี้ (รวมบัญชี Google ที่ยังไม่ถูกรวม)
+    await setRole(clean, role);
+    return { skipped: false, existed };
+  }
+
+  return { enabled, setRole, disable, createUser };
 }
 
 // ตัวที่แอปใช้: เปิดเฉพาะโหมด alb

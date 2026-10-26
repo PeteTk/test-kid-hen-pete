@@ -30,10 +30,10 @@ function startSession(req, user, sub = null, via = null) {
   });
 }
 
-// URL รูปโปรไฟล์จาก avatar_key (ในเครื่อง = /uploads/<key>, ขั้น 3d จะเปลี่ยนเป็น S3)
+// URL รูปโปรไฟล์จาก avatar_key (ในเครื่อง = /uploads/<key>, 3d บน AWS = /files/<key> → pre-signed URL ของ S3)
 function avatarUrl(user) {
   const key = user?.avatar_key;
-  return key ? `/uploads/${key}` : "";
+  return key ? require("../service/storage").storage.url(key) : "";
 }
 
 module.exports = { HOME, sessionUser, startSession, avatarUrl };

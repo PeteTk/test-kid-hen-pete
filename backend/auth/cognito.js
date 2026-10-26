@@ -126,11 +126,18 @@ function createCognitoAuth({
     if (p.token_use !== "id") throw authError("ไม่ใช่ ID token");
     if (!p.email) throw authError("token ไม่มีอีเมล");
 
+    // เข้าด้วย Google: claim "identities" บอกผู้ให้บริการ + id ของผู้ใช้ฝั่ง Google
+    // (ใช้ตอนบังคับตั้งรหัสผ่านครั้งแรก เพื่อรวมตัวตน Google เข้ากับบัญชีอีเมล/รหัสผ่าน)
+    const ids = Array.isArray(p.identities) ? p.identities : [];
+    const federated = ids[0] ? { provider: String(ids[0].providerName || ""), userId: String(ids[0].userId || "") } : null;
+
     return {
       sub: p.sub,
       email: String(p.email).toLowerCase(),
       name: p.name || [p.given_name, p.family_name].filter(Boolean).join(" "),
       groups: p["cognito:groups"] || [],
+      username: String(p["cognito:username"] || ""),
+      federated,
     };
   }
 

@@ -33,7 +33,7 @@
         <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
 
           <div class="min-w-0">
-            <h2 class="font-bold text-[#1F2A8A] text-lg lg:text-xl">สรุปปัญหาอัตโนมัติรายสัปดาห์</h2>
+            <h2 class="font-bold text-[#1F2A8A] text-lg lg:text-xl">สรุปปัญหาอัตโนมัติ (AI)</h2>
             <p class="mt-1 text-sm text-gray-600">จัดกลุ่มเพื่อแสดงภาพรวม ไม่รวมงานหรือปิดคำร้องอัตโนมัติ</p>
           </div>
 
@@ -50,22 +50,13 @@
         <!-- ข้อมูลสถานะ -->
         <div class="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
           <div class="rounded-xl bg-[#F7F8FB] px-4 py-3">
-            <p class="mt-2 text-sm">
-              การตั้งเวลา:
-              จัดการผ่าน AWS EventBridge Scheduler
-            </p>
-
-            <p class="mt-2 text-sm">
-              การรับงานของเว็บ:
-              <%= eventBridgeConfigured
-                ? "ตั้ง API Key แล้ว"
-                : "ยังไม่ได้ตั้ง API Key" %>
-            </p>
-
-            <p class="mt-2 text-xs text-gray-500">
-              ตรวจวันเวลาและสถานะ Enabled
-              ของ Schedule ใน AWS Console
-            </p>
+            <p class="text-xs text-gray-500">การทำงาน</p>
+            <% if (mode === "eventbridge") { %>
+              <p class="mt-1 text-sm">EventBridge (ตั้งเวลา / ปุ่มนี้) → Lambda → Gemini → RDS</p>
+            <% } else { %>
+              <p class="mt-1 text-sm">โหมดในเครื่อง: เว็บเรียก Gemini เอง (บน AWS ใช้ Lambda)</p>
+            <% } %>
+            <p class="mt-1 text-xs text-gray-500">รอจัดกลุ่ม <%= pending %> คำร้อง (กรองข้อมูลส่วนบุคคลแล้ว)</p>
           </div>
 
           <div class="rounded-xl bg-[#F7F8FB] px-4 py-3">
@@ -85,7 +76,8 @@
                   </span>
               </p>
               <p class="text-xs text-gray-500 mt-1">
-                ประมวลผล <%= lastRun.processed %> คำร้อง · เก็บภายในเพิ่ม <%= lastRun.heldCount %> คำร้อง
+                ประมวลผล <%= lastRun.processed %> คำร้อง · หัวข้อใหม่ <%= lastRun.createdTopics %> · เก็บภายใน <%= lastRun.heldCount %> คำร้อง
+                <% if (lastRun.trigger) { %>· โดย <%= lastRun.trigger %><% } %>
               </p>
             </div>
           <% } %>

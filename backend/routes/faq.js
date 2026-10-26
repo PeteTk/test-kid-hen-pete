@@ -121,39 +121,23 @@ router.get("/", async (req, res) => {
     list,
     filters,
     TYPES,
-    eventBridgeConfigured: Boolean(
-      process.env.EVENTBRIDGE_API_KEY?.trim()
-    ),
   });
 });
 
-// เพิ่ม: ใช้ engine เดียวกับ scheduler
-// เริ่มงานแล้วกลับหน้ารายการ ไม่ให้ browser รอหลาย API calls
+// แก้ (3d): ส่ง RunAnalysis เข้า EventBridge → Lambda analyze.py (โหมด local: ประมวลผลในเว็บ)
+// เริ่มงานแล้วกลับหน้ารายการ ไม่ให้ browser รอ
 router.post("/run", async (req, res) => {
-  if (
-    (await issues.dashboard()).running
-  ) {
-    req.session.faqFlash = {
-      error: true,
-      text:
-        "กำลังประมวลผลอยู่",
-    };
-  } else {
-    issues
-      .runBatch()
-      .catch((error) => {
-        console.error(
-          "[AI]",
-          error.message
-        );
-      });
-
+  try {
+    const { via } = await issues.requestRun({ by: req.session.user.id });
     req.session.faqFlash = {
       error: false,
-
       text:
-        "เริ่มประมวลผลแล้ว กดรีเฟรชเพื่อตรวจผล",
+        via === "eventbridge"
+          ? "ส่งงานให้ Lambda แล้ว (EventBridge) รอประมาณ 1–2 นาทีแล้วกดรีเฟรช"
+          : "เริ่มประมวลผลแล้ว กดรีเฟรชเพื่อตรวจผล",
     };
+  } catch (error) {
+    req.session.faqFlash = { error: true, text: error.message };
   }
 
   res.redirect("/admin/faq");
@@ -227,7 +211,7 @@ router.post(
       );
     }
 
-    issues.setPublished(
+    return issues.setPublished(
       req.params.id,
 
       req.body.published ===

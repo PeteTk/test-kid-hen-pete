@@ -335,6 +335,22 @@ async function init() {
   await ensureColumn("notifications", "status", "VARCHAR(30)");
   await ensureColumn("notifications", "category", "VARCHAR(20)");
 
+  // เพิ่ม (3d): ปัญหาที่พบบ่อยย้ายจากไฟล์ JSON บน EC2 มาที่ตาราง issues / issue_tickets / ai_inputs
+  // (Lambda analyze.py อ่าน ai_inputs แล้วเขียน issues ตาม diagram)
+  await ensureColumn("issues", "type", "VARCHAR(50)");
+  await ensureColumn("issues", "place_key", "VARCHAR(64)");
+  await ensureColumn("issues", "symptoms", "TEXT");
+  await ensureColumn("issues", "label_key", "VARCHAR(64)");
+  await ensureColumn("issues", "location_info", "TEXT");
+  await ensureColumn("issues", "updated_at", "VARCHAR(30)");
+  await ensureColumn("issue_tickets", "hash", "VARCHAR(64)");
+  await ensureColumn("ai_inputs", "hash", "VARCHAR(64)");
+  await ensureColumn("ai_inputs", "state", "VARCHAR(10)");
+  await ensureColumn("ai_inputs", "reason", "VARCHAR(200)");
+  await ensureColumn("ai_inputs", "label_key", "VARCHAR(64)");
+  await ensureColumn("ai_inputs", "location_label", "VARCHAR(200)");
+  await ensureColumn("ai_inputs", "location_info", "TEXT");
+
   const departments = DEPARTMENT_NAMES;
 
   for (const [departmentId, name] of Object.entries(departments)) {
