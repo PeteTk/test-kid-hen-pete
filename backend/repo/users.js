@@ -319,7 +319,8 @@ function labels(user) {
   const department = [...new Set(units.map((u) => db.DEPARTMENT_NAMES[u.department_id]).filter(Boolean))];
   return {
     facultyLabel: faculty.join(", ") || "-",
-    departmentLabel: department.join(", ") || "-",
+    // นักศึกษาแสดงฝ่ายเป็น "นักศึกษา" (unit "student" = ฝ่ายกิจการนักศึกษาของ Staff ใช้ภายในเพื่อจับคู่คำร้องเท่านั้น)
+    departmentLabel: user?.role === "USER" ? "นักศึกษา" : department.join(", ") || "-",
   };
 }
 
