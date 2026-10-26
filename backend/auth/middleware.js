@@ -58,7 +58,7 @@ function createUserMiddleware({ mode, alb }) {
         }
 
         // เปลี่ยนชื่อ/role มีผลใน request นี้เลย
-        req.session.user = sessionUser(account, req.session.user.sub ?? null);
+        req.session.user = sessionUser(account, req.session.user.sub ?? null, req.session.user.via ?? null);
         req.account = account;
       }
 

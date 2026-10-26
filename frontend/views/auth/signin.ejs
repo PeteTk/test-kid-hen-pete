@@ -17,16 +17,19 @@
         <form method="POST" action="/signin"
             class="w-full max-w-sm bg-white rounded-3xl p-8 flex flex-col gap-4 shadow-xl">
 
-            <!-- แก้ (3b-2): ล็อกอินด้วยอีเมล (บัญชีทดลองพิมพ์ username เดิมได้ เช่น user) -->
-            <input type="text" name="username" placeholder="Email หรือ Username" required
+            <%- include("_messages") %>
+
+            <!-- local: อีเมล หรือ username ทดลอง (เช่น user01) | cognito: อีเมลของบัญชี Cognito -->
+            <input type="<%= authMode === 'cognito' ? 'email' : 'text' %>" name="username"
+                placeholder="<%= authMode === 'cognito' ? 'Email' : 'Email หรือ Username' %>" required
                 value="<%= typeof login === 'string' ? login : '' %>" autocomplete="username"
                 class="h-13 rounded-full border border-gray-800 px-5 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#F6A85A]">
 
             <input type="password" name="password" placeholder="Password" required autocomplete="current-password"
                 class="h-13 rounded-full border border-gray-800 px-5 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#F6A85A]">
 
-            <% if (error) { %>
-                <p class="text-sm text-red-600 text-center"><%= error %></p>
+            <% if (authMode === 'cognito') { %>
+                <a href="/forgot" class="text-xs text-gray-500 text-center hover:opacity-80">ลืมรหัสผ่าน?</a>
             <% } %>
 
             <!-- ปุ่ม SIGN IN: ส่งฟอร์มไปตรวจรหัส -->
@@ -38,10 +41,7 @@
                 <span class="flex-1 h-px bg-gray-200"></span> or <span class="flex-1 h-px bg-gray-200"></span>
             </div>
 
-            <button type="button" onclick="alert('Google Login จะเชื่อมต่อภายหลัง')"
-                class="w-full hover:opacity-80 transition">
-                <img src="/img/btn-google.svg" alt="Continue with Google" class="w-full h-auto">
-            </button>
+            <%- include("_google") %>
 
             <% if (devAccounts && devAccounts.length) { %>
                 <!-- เพิ่ม (3b-2): บัญชีทดลอง แสดงเฉพาะตอนรันในเครื่อง (SQLite, ไม่ใช่ production) -->

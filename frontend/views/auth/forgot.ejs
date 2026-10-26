@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="th">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KIDHEN | ลืมรหัสผ่าน</title>
+    <link rel="stylesheet" href="/css/output.css">
+</head>
+
+<body class="min-h-screen bg-[#161D63] flex items-center justify-center px-4 py-10">
+    <div class="w-full max-w-4xl flex flex-col md:flex-row items-center justify-between gap-12">
+
+        <img src="/img/logo-big.svg" alt="KIDHEN" class="w-[280px] h-auto select-none">
+
+        <!-- เพิ่ม: ลืมรหัสผ่าน (Cognito ส่งรหัสยืนยันทางอีเมล) — แทนหน้า Cognito -->
+        <div class="w-full max-w-sm bg-white rounded-3xl p-8 flex flex-col gap-4 shadow-xl">
+            <h2 class="text-xl font-bold text-[#1F2A8A] text-center">ลืมรหัสผ่าน</h2>
+
+            <%- include("_messages") %>
+
+            <% if (step === "request") { %>
+                <form method="POST" action="/forgot" class="flex flex-col gap-4">
+                    <input type="email" name="email" placeholder="Email" required value="<%= email %>" autocomplete="username"
+                        class="h-13 rounded-full border border-gray-800 px-5 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#F6A85A]">
+                    <button type="submit" class="w-full h-11 rounded-full border border-black bg-[#F6A85A] font-bold hover:bg-[#F39A3E]">ส่งรหัสยืนยันทางอีเมล</button>
+                </form>
+            <% } else { %>
+                <form method="POST" action="/forgot/confirm" class="flex flex-col gap-4">
+                    <input type="hidden" name="email" value="<%= email %>">
+                    <p class="text-xs text-gray-500 text-center"><%= email %></p>
+                    <input type="text" name="code" placeholder="รหัสยืนยันจากอีเมล" required inputmode="numeric" autocomplete="one-time-code"
+                        class="h-13 rounded-full border border-gray-800 px-5 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#F6A85A]">
+                    <input type="password" name="password" placeholder="รหัสผ่านใหม่" required minlength="8" autocomplete="new-password"
+                        class="h-13 rounded-full border border-gray-800 px-5 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#F6A85A]">
+                    <input type="password" name="confirm" placeholder="ยืนยันรหัสผ่านใหม่" required minlength="8" autocomplete="new-password"
+                        class="h-13 rounded-full border border-gray-800 px-5 text-sm placeholder:text-gray-300 focus:outline-none focus:ring-2 focus:ring-[#F6A85A]">
+                    <p class="text-xs text-gray-400 text-center">อย่างน้อย 8 ตัว มีตัวพิมพ์ใหญ่ ตัวพิมพ์เล็ก และตัวเลข</p>
+                    <button type="submit" class="w-full h-11 rounded-full border border-black bg-[#F6A85A] font-bold hover:bg-[#F39A3E]">ตั้งรหัสผ่านใหม่</button>
+                </form>
+            <% } %>
+
+            <a href="/signin" class="text-xs text-gray-500 text-center hover:opacity-80">กลับไปหน้าเข้าสู่ระบบ</a>
+        </div>
+
+    </div>
+</body>
+
+</html>

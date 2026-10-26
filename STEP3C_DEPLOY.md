@@ -3,7 +3,7 @@
 > แทนคู่มือ 3b-2 (ขั้นตอนเดิมทั้งหมด + ส่วนที่เพิ่มของ 3c: คำร้อง/แจ้งเตือนใน RDS, EventBridge → Lambda → SNS, `app_revision`)
 
 > ใช้เมื่อพร้อมเปิด Learner Lab แล้ว — ก่อนหน้านั้นทดสอบในเครื่องตาม `STEP3C_SUMMARY.md`
-> บน AWS: ล็อกอินผ่าน **Cognito Hosted UI ที่ ALB** → ผู้ใช้/role/session/คำร้อง/แจ้งเตือนอยู่ใน RDS → Staff เปลี่ยนสถานะ = เว็บส่ง `TicketStatusChanged` เข้า **EventBridge** → **Lambda** เขียนแจ้งเตือน + ส่ง **SNS**
+> บน AWS (3c-2): ล็อกอินที่ **หน้าเว็บ KIDHEN** (อีเมล/รหัสผ่าน หรือ Google) เว็บคุยกับ Cognito เอง ไม่แสดงหน้า Cognito → ผู้ใช้/role/session/คำร้อง/แจ้งเตือนอยู่ใน RDS → Staff เปลี่ยนสถานะ = เว็บส่ง `TicketStatusChanged` เข้า **EventBridge** → **Lambda** เขียนแจ้งเตือน + ส่ง **SNS**
 > ตัวอย่างใช้ domain `kid-hen.app`, region `us-east-1`, prefix ชื่อ `kidhen-dev`
 
 ## ภาพรวมลำดับ
@@ -65,10 +65,10 @@ aws route53 create-hosted-zone --name kid-hen.app --caller-reference "kidhen-$(d
 |---|---|---|
 | `github_repo_url` | `https://github.com/<org>/KidhenProject.git` | ว่าง = EC2 รันเว็บ placeholder |
 | `github_branch` | `step3c` (หรือ `main`) | |
-| `app_revision` | `"3c-1"` (ตั้งไว้แล้ว) | เปลี่ยนค่าเมื่อต้องการให้ EC2 ดึงโค้ดใหม่ ดู [G2] |
+| `app_revision` | `"3c-2"` (ตั้งไว้แล้ว) | เปลี่ยนค่าเมื่อต้องการให้ EC2 ดึงโค้ดใหม่ ดู [G2] |
 | `enable_custom_domain` | `true` | มีแล้ว |
 | `create_hosted_zone` / `route53_zone_id` | ตามข้อ [C] | |
-| `enable_alb_cognito_auth` | `true` | มีแล้ว → Terraform ส่ง `AUTH_MODE=alb` ให้เว็บ |
+| `enable_alb_cognito_auth` | `false` (ตั้งไว้แล้ว) | Terraform ส่ง `AUTH_MODE=cognito` ให้เว็บ (หน้า login ของเว็บเอง) · `true` = กลับไปใช้หน้า Cognito ที่ ALB |
 | `asg_min_size`, `asg_desired_capacity` | **`1`** จนกว่าจะทำ 3d | คำร้อง/แจ้งเตือนอยู่ RDS แล้ว แต่ **รูปแนบ/รูปโปรไฟล์ และไฟล์หัวข้อปัญหา (AI)** ยังอยู่บนดิสก์ของแต่ละ EC2 |
 | `notification_emails` | อีเมลทีม | ได้อีเมล SNS เมื่อสถานะคำร้องเปลี่ยน (ต้องกด Confirm subscription หลัง apply) |
 | `db_multi_az`, `nat_gateway_per_az` | `false` ตอนทดสอบ | ประหยัดงบ Lab (Requirement จริง = true) |
@@ -122,17 +122,19 @@ terraform output asg_name
    `KID-HEN: http://localhost:3000 (DB=mysql, AUTH_MODE=alb)`
    (บน RDS ไม่มีบัญชีทดลอง/คำร้องตัวอย่าง — สร้างเฉพาะ SQLite ในเครื่อง)
    ถ้าไม่ขึ้น ดู `/kidhen/dev/ec2/userdata` (clone/npm/init-db ล้ม)
-3. **เข้าเว็บ** `https://kid-hen.app` → ALB พาไปหน้า Cognito Hosted UI
-4. **Admin คนแรก**: อีเมลใน `initial_admin_emails` ได้รหัสชั่วคราวจาก Cognito → ล็อกอิน → ตั้งรหัสใหม่ (ต้องมีตัวใหญ่ ตัวเล็ก ตัวเลข ≥ 8 ตัว) → กลับมาที่ `/admin/dashboard`
+3. **เข้าเว็บ** `https://kid-hen.app` → หน้า login ของ KIDHEN → Sign in
+4. **Admin คนแรก**: อีเมลใน `initial_admin_emails` + รหัสชั่วคราวจากอีเมล Cognito → เว็บพาไปหน้า "ตั้งรหัสผ่านใหม่" (ตัวใหญ่ ตัวเล็ก ตัวเลข ≥ 8 ตัว) → `/admin/dashboard`
+   (ถ้าเคยตั้งรหัสแล้วตอนใช้หน้า Cognito ใช้รหัสนั้นได้เลย · ลืม/รหัสชั่วคราวหมดอายุ → "ลืมรหัสผ่าน?")
 5. ยืนยันใน DB ว่าเว็บสร้างผู้ใช้ให้แล้ว (เข้า EC2 ผ่าน **Session Manager**):
    ```bash
    sudo -i
    set -a; . /etc/kidhen.env; set +a
-   grep -E 'AUTH_MODE|EVENTS_MODE|ALB_ARN' /etc/kidhen.env     # ต้องเห็น alb / eventbridge
+   grep -E 'AUTH_MODE|EVENTS_MODE' /etc/kidhen.env     # ต้องเห็น cognito / eventbridge
    cd /opt/kidhen/app/backend
    node -e 'const db=require("./db");db.query("SELECT email,role,active FROM users").then(r=>{console.table(r);return db.close()})'
    ```
-6. **นักศึกษา**: ล็อกอินด้วย Google `@kmitl.ac.th` (ถ้าเปิด Google) → ได้ role USER + คณะจากรหัส → เห็นฟอร์มแจ้งปัญหาเฉพาะคณะตัวเอง + ส่วนกลาง
+6. **นักศึกษา**: ปุ่ม Continue with Google → หน้า Google (อาจเห็นที่อยู่ `kid-hen.auth...amazoncognito.com` แวบเดียวระหว่าง redirect) → กลับมา `/user/home` ได้ role USER + คณะจากรหัส
+   ต้องเปิด `enable_google_idp = true` และใส่ `terraform output cognito_google_redirect_uri` ใน Google Cloud Console
 
 ## [G] สิทธิ์ของ LabRole + ทดสอบหน้า Admin
 หน้า Admin เปลี่ยน role = ย้ายกลุ่ม Cognito ด้วย (ไม่งั้น login ครั้งหน้า role จะถูก sync กลับ) และ Staff เปลี่ยนสถานะ = `events:PutEvents` จึงต้องตรวจสิทธิ์ของ LabRole
@@ -151,7 +153,33 @@ bash check_lab_permissions.sh     # ต้องผ่าน ListUsers, AdminLis
    ```
    ต้องเห็น `["Staff"]`
 3. เพื่อน logout → login ใหม่ → ไป `/staff/dashboard`
-4. **Logout**: ปุ่มออกจากระบบ → ลบ cookie ALB → Cognito `/logout` → กลับ `https://kid-hen.app/login` → ALB พาไปหน้า login ของ Cognito อีกครั้ง
+4. **Logout**: ปุ่มออกจากระบบ → กลับหน้า login ของเว็บ (ขึ้น "ออกจากระบบแล้ว") · คนที่เข้าด้วย Google ระบบออกจาก session Cognito ให้ด้วย (redirect แวบเดียว)
+
+## [G0] เปลี่ยนจากหน้า Cognito (ALB) มาเป็นหน้า login ของเว็บ — ทำใน Lab ที่เปิดอยู่ได้เลย
+```bash
+# 1) โค้ดเว็บ 3c-2 ขึ้น GitHub
+git add -A && git commit -m "3c-2: web login page with Cognito API" && git push
+# 2) Terraform (tfvars ตั้ง enable_alb_cognito_auth = false และ app_revision = "3c-2" ไว้แล้ว)
+terraform plan -out kidhen.tfplan     # ควรเห็น: listener 443 เปลี่ยน, launch template เปลี่ยน, App Client เปลี่ยน callback (ไม่ replace)
+terraform apply kidhen.tfplan
+# 3) รอ ASG เปลี่ยนเครื่อง (~5–8 นาที) แล้วดู log
+aws logs tail /kidhen/dev/ec2/app --follow     # ต้องเห็น AUTH_MODE=cognito
+```
+4) เปิด browser ใหม่ (หรือลบ cookie ของ `kid-hen.app`) → `https://kid-hen.app` ต้องเจอหน้า KIDHEN ไม่ใช่หน้า Cognito
+
+### ทดสอบหน้า login ของเว็บกับ Cognito จริง "จากเครื่องตัวเอง" (ระหว่าง Lab เปิด)
+App Client อนุญาต `http://localhost:3000/auth/callback` ไว้แล้ว — ใส่ใน `backend/.env`:
+```bash
+AUTH_MODE=cognito
+AWS_REGION=us-east-1
+APP_BASE_URL=http://localhost:3000
+COGNITO_USER_POOL_ID=<terraform output -raw cognito_user_pool_id>
+COGNITO_CLIENT_ID=<terraform output -raw cognito_client_id>
+COGNITO_CLIENT_SECRET=<terraform output -raw cognito_client_secret>
+COGNITO_DOMAIN=<terraform output -raw cognito_hosted_ui_domain>
+COGNITO_ISSUER=<terraform output -raw cognito_issuer>
+```
+`npm run dev` → `http://localhost:3000` ล็อกอินด้วยบัญชี Cognito จริง (ข้อมูลอยู่ใน SQLite ในเครื่อง) — หน้า Admin เปลี่ยน role จะเรียก Cognito Admin API จึงต้องมี credentials ของ Lab ใน `~/.aws/credentials`
 
 ## [G1] ทดสอบคำร้อง → EventBridge → Lambda → แจ้งเตือน/SNS
 1. ให้ Admin ตั้งเพื่อนคนหนึ่งเป็น **Staff** + คณะ/ฝ่าย เช่น `07` + `เทคโนโลยีสารสนเทศ` (ข้อ [G])
@@ -193,9 +221,11 @@ terraform destroy      # NAT, RDS, ALB คิดเงินรายชั่�
 | อาการ | สาเหตุที่พบบ่อย | วิธีแก้ |
 |---|---|---|
 | Target `unhealthy` วนสร้างเครื่องใหม่ | แอปล้มตอนบูต | ดู `/kidhen/dev/ec2/app` และ `/kidhen/dev/ec2/userdata`; ตรวจ `health_check_path = "/health"` |
-| หน้าเว็บขึ้น `ต้องเข้าเว็บผ่าน Load Balancer ที่ล็อกอิน Cognito` | เข้า URL ของ ALB ด้วย HTTP/ไม่มี listener auth หรือ `enable_alb_cognito_auth = false` | เข้า `https://kid-hen.app` เท่านั้น; ตรวจ tfvars |
-| `ยืนยันตัวตนไม่สำเร็จ` (401) | EC2 โหลด public key ของ ALB/Cognito ไม่ได้ (ไม่มี NAT) หรือ `ALB_ARN` ไม่ตรง | `enable_nat_gateway = true`; log แอปจะบอกเหตุผล `[auth] ...`; เปิด `https://kid-hen.app/logout` แล้วเข้าใหม่ |
-| Cognito: `redirect_mismatch` | callback ไม่อยู่ใน App Client | Terraform ใส่ `https://kid-hen.app/oauth2/idpresponse` ให้เมื่อเปิด ALB auth — ตรวจ `domain_name` |
+| ยังเห็นหน้า Cognito หลัง apply | listener ยังเป็นแบบเดิม หรือ EC2 ยังเป็นโค้ดเก่า (`AUTH_MODE=alb`) | `terraform apply` ให้ครบ, รอ instance refresh, เปิด Incognito |
+| ล็อกอินอีเมลแล้ว "อีเมลหรือรหัสผ่านไม่ถูกต้อง" ทั้งที่ถูก | บัญชี Google อย่างเดียว (ไม่มีรหัสผ่าน) หรือ App Client ไม่มี `ALLOW_USER_PASSWORD_AUTH` | ใช้ปุ่ม Google / ตรวจ `explicit_auth_flows` |
+| กด Google แล้วขึ้น `redirect_mismatch` | `https://kid-hen.app/auth/callback` ไม่อยู่ใน callback_urls / `APP_BASE_URL` ไม่ตรง | `enable_custom_domain = true` (Terraform เติมให้) และ `APP_BASE_URL=https://kid-hen.app` |
+| Google ขึ้น "ใช้ได้เฉพาะบัญชี Google ของสถาบัน" | Lambda pre sign-up ปฏิเสธอีเมลนอก `@kmitl.ac.th` | ตั้งใจ (ตาม `cognito_allowed_email_domains`) |
+| (โหมด alb เท่านั้น) `401 Authorization Required` ของ ALB / `ยืนยันตัวตนไม่สำเร็จ` | cookie ALB เก่าค้าง / EC2 โหลด key ไม่ได้ | ลบ cookie หรือใช้ Incognito; `enable_nat_gateway = true` |
 | กด Logout แล้ว Cognito error เรื่อง logout_uri | `APP_BASE_URL` ไม่ตรงกับ `logout_urls` | ต้องเป็น `https://kid-hen.app/login` (Terraform ใส่ให้เมื่อ `enable_custom_domain = true`) |
 | เปลี่ยน role ในหน้า Admin แล้ว error "เปลี่ยนบทบาทใน Cognito ไม่สำเร็จ" | LabRole ไม่มีสิทธิ์ `cognito-idp:Admin*` | รัน `check_lab_permissions.sh`; ถ้าไม่ผ่านให้ย้ายกลุ่มใน Cognito console แทน (role จะ sync ตอน login ครั้งหน้า) |
 | Staff เข้า `/staff/...` ได้ 403 "ยังไม่มีข้อมูลคณะ" | ยังไม่ได้ตั้งคณะ/ฝ่าย | Admin → จัดการผู้ใช้ → เลือกคณะ/ฝ่าย |
@@ -208,9 +238,9 @@ terraform destroy      # NAT, RDS, ALB คิดเงินรายชั่�
 ## env ที่เว็บใช้ในขั้นนี้ (Terraform เขียนให้ใน `/etc/kidhen.env`)
 | ชื่อ | ใช้ทำอะไร |
 |---|---|
-| `AUTH_MODE=alb` | อ่านตัวตนจาก `x-amzn-oidc-data` / `x-amzn-oidc-accesstoken` |
+| `AUTH_MODE=cognito` | หน้า login ของเว็บ เรียก Cognito API (`InitiateAuth`, ตั้งรหัสใหม่, ลืมรหัส) + Google ผ่าน `/auth/callback` |
+| `COGNITO_CLIENT_SECRET` | ทำ `SECRET_HASH` และแลก code ของ Google |
 | `EVENTS_MODE=eventbridge` | Staff เปลี่ยนสถานะ → PutEvents (`EVENT_SOURCE`=`kidhen.app`, DetailType `TicketStatusChanged`) |
-| `ALB_ARN` | ตรวจว่า token เซ็นโดย ALB ตัวนี้ |
 | `COGNITO_ISSUER`, `COGNITO_CLIENT_ID` | ตรวจ access token (issuer, client_id) และโหลด JWKS |
 | `COGNITO_USER_POOL_ID` | ย้ายกลุ่ม/Disable ผู้ใช้จากหน้า Admin |
 | `COGNITO_DOMAIN`, `APP_BASE_URL` | URL logout ของ Cognito |

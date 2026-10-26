@@ -1,4 +1,4 @@
-// service/cognito-groups.js — ให้หน้า Admin เปลี่ยน role/ลบผู้ใช้ ฝั่ง Cognito ด้วย (โหมด AUTH_MODE=alb)
+// service/cognito-groups.js — ให้หน้า Admin เปลี่ยน role/ลบผู้ใช้ ฝั่ง Cognito ด้วย (AUTH_MODE=cognito หรือ alb)
 //
 // เหตุผล: Cognito เป็นตัวกำหนด role — ทุกครั้งที่ login เว็บจะ sync role จาก "cognito:groups"
 // ถ้าแก้แค่ใน DB ครั้งหน้าที่ผู้ใช้ login role จะถูกเขียนทับกลับเป็นค่าเดิม
@@ -95,7 +95,7 @@ function createCognitoGroups({ userPoolId, region, client } = {}) {
 
 // ตัวที่แอปใช้: เปิดเฉพาะโหมด alb
 const cognitoGroups = createCognitoGroups(
-  config.auth.mode === "alb"
+  config.auth.mode !== "local" // alb และ cognito: role มาจากกลุ่ม Cognito
     ? { userPoolId: config.cognito.userPoolId, region: config.aws.region }
     : {}
 );

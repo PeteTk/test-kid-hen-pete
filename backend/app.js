@@ -78,7 +78,8 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: config.production, // production อยู่หลัง HTTPS ของ ALB
+      // ส่ง cookie เฉพาะ HTTPS เมื่อเว็บเปิดผ่าน https (kid-hen.app) — http://localhost / ALB แบบไม่มี domain ใช้ได้ด้วย
+      secure: config.appBaseUrl.startsWith("https://"),
       maxAge: SESSION_MAX_AGE,
     },
   })

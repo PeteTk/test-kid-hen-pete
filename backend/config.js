@@ -34,9 +34,10 @@ const config = {
 
   sessionSecret: str("SESSION_SECRET", "kidhen-dev-secret"),
 
-  // เพิ่ม (3b-2): วิธีเข้าสู่ระบบ
-  //   local = ฟอร์มอีเมล/username + รหัสผ่าน จากตาราง users (ใช้ในเครื่อง, บัญชีทดลองมีเฉพาะ SQLite)
-  //   alb   = ALB ล็อกอิน Cognito ให้ก่อน แล้วเว็บอ่านตัวตนจาก header x-amzn-oidc-* (บน AWS)
+  // วิธีเข้าสู่ระบบ
+  //   local   = ฟอร์มอีเมล/username + รหัสผ่าน จากตาราง users (ในเครื่อง, บัญชีทดลองมีเฉพาะ SQLite)
+  //   cognito = หน้า login ของเว็บเอง เรียก Cognito API / Google ผ่าน Cognito (ไม่แสดงหน้า Cognito) — บน AWS
+  //   alb     = ALB ล็อกอิน Cognito ให้ก่อน (แสดงหน้า Hosted UI ของ Cognito) แล้วเว็บอ่าน header x-amzn-oidc-*
   auth: {
     mode: str("AUTH_MODE", production ? "alb" : "local"),
     // ARN ของ ALB: ถ้าตั้ง จะตรวจว่า token ถูกเซ็นโดย ALB ตัวนี้เท่านั้น (Terraform ส่งให้)
@@ -99,8 +100,22 @@ function validate(cfg) {
     errors.push('EVENTS_MODE ต้องเป็น "local" หรือ "eventbridge"');
   }
 
-  if (!["local", "alb"].includes(cfg.auth.mode)) {
-    errors.push('AUTH_MODE ต้องเป็น "local" หรือ "alb"');
+  if (!["local", "cognito", "alb"].includes(cfg.auth.mode)) {
+    errors.push('AUTH_MODE ต้องเป็น "local", "cognito" หรือ "alb"');
+  }
+
+  // โหมด cognito ต้องรู้ pool/client/domain/issuer และ URL ของเว็บ (ใช้ทำ redirect_uri ของ Google)
+  if (cfg.auth.mode === "cognito") {
+    const need = {
+      COGNITO_USER_POOL_ID: cfg.cognito.userPoolId,
+      COGNITO_CLIENT_ID: cfg.cognito.clientId,
+      COGNITO_DOMAIN: cfg.cognito.domain,
+      COGNITO_ISSUER: cfg.cognito.issuer,
+      APP_BASE_URL: cfg.appBaseUrl,
+    };
+    for (const [name, value] of Object.entries(need)) {
+      if (!value) errors.push(`AUTH_MODE=cognito ต้องมี ${name}`);
+    }
   }
 
   // โหมด alb ต้องรู้ issuer/client เพื่อตรวจ token (ใช้ได้ในเครื่องด้วย เช่นทดสอบ header ปลอม)
@@ -154,10 +169,10 @@ if (errors.length) {
 if (production) {
   // ตาม diagram ต้องเป็น Cognito → ALB; โหมด local บน RDS ไม่มีบัญชีทดลอง จึงล็อกอินไม่ได้
   // (ยอมให้บูตได้ เพื่อทดสอบ ALB/ASG ตอนยังไม่เปิด domain โดยไม่ให้ health check ล้มวน)
-  if (config.auth.mode !== "alb") {
+  if (config.auth.mode === "local") {
     console.warn(
       "[config] AUTH_MODE=" + config.auth.mode +
-        " บน production: ล็อกอินไม่ได้ — เปิด enable_custom_domain + enable_alb_cognito_auth ใน Terraform"
+        " บน production: ไม่มีบัญชีทดลองบน RDS จึงล็อกอินไม่ได้ — ใช้ AUTH_MODE=cognito (Terraform ตั้งให้เมื่อเปิด enable_custom_domain)"
     );
   }
 

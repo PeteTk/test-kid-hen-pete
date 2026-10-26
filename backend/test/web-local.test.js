@@ -198,7 +198,7 @@ function browser() {
       const b = browser();
       await b.login("admin");
       const before = (await db.query("SELECT COUNT(*) AS n FROM sessions"))[0].n;
-      assert.equal((await b.get("/logout")).location, "/login");
+      assert.equal((await b.get("/logout")).location, "/login?out=1");
       const after = (await db.query("SELECT COUNT(*) AS n FROM sessions"))[0].n;
       assert.equal(Number(after), Number(before) - 1);
       assert.equal((await b.get("/admin/users")).location, "/login");

@@ -9,7 +9,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "init-db": "node db.js",
-    "test": "node --no-warnings test/users.repo.test.js && node --no-warnings test/dev-seed.test.js && node --no-warnings test/auth.test.js && node --no-warnings test/web-local.test.js && node --no-warnings test/tickets.test.js"
+    "test": "node --no-warnings test/users.repo.test.js && node --no-warnings test/dev-seed.test.js && node --no-warnings test/auth.test.js && node --no-warnings test/web-local.test.js && node --no-warnings test/tickets.test.js && node --no-warnings test/cognito.test.js"
   },
   "dependencies": {
     "@aws-sdk/client-cognito-identity-provider": "^3.1156.0",

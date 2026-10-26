@@ -1,0 +1,11 @@
+<!-- ปุ่ม Google: AUTH_MODE=cognito ไปหน้า Google โดยตรง (ไม่ผ่านหน้า Cognito) / ในเครื่อง (local) ยังไม่เชื่อม -->
+<% if (googleEnabled) { %>
+    <a href="/auth/google" class="block w-full hover:opacity-80 transition">
+        <img src="/img/btn-google.svg" alt="Continue with Google" class="w-full h-auto">
+    </a>
+<% } else { %>
+    <button type="button" onclick="alert('Google ใช้ได้เมื่อรันด้วย AUTH_MODE=cognito (บน AWS หรือเครื่องที่ตั้งค่า Cognito แล้ว)')"
+        class="w-full hover:opacity-80 transition">
+        <img src="/img/btn-google.svg" alt="Continue with Google" class="w-full h-auto">
+    </button>
+<% } %>

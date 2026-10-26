@@ -1,12 +1,13 @@
-// routes/auth.js — เข้า/ออกจากระบบ
+// routes/auth.js — เข้า/ออกจากระบบ (หน้าเว็บ KIDHEN เสมอ)
 //
-// แก้ (3b-2): ไม่ใช้ mockUsers แล้ว
-//   AUTH_MODE=local : ฟอร์ม /signin ตรวจอีเมล + รหัสผ่านกับตาราง users
-//                     (บัญชีทดลองใน SQLite พิมพ์ username เดิมได้ เช่น user / 1234)
-//   AUTH_MODE=alb   : ALB ล็อกอิน Cognito ให้ก่อนถึงเว็บ (Hosted UI: Google หรืออีเมล/รหัสผ่าน)
-//                     หน้า /login, /signin จึงแค่ส่งต่อไปหน้าแรกของ role
+//   AUTH_MODE=local   : ฟอร์ม /signin ตรวจกับตาราง users (บัญชีทดลองใน SQLite พิมพ์ username ได้ เช่น user / 1234)
+//   AUTH_MODE=cognito : ฟอร์ม /signin ส่งอีเมล/รหัสผ่านไป Cognito API จากฝั่ง server
+//                       ปุ่ม Google → /auth/google → หน้า Google โดยตรง → /auth/callback
+//                       ตั้งรหัสใหม่ครั้งแรก (/signin/new-password) + ลืมรหัสผ่าน (/forgot) อยู่ในเว็บเอง
+//   AUTH_MODE=alb     : ALB ล็อกอินให้ก่อน (หน้า Cognito) — /login, /signin แค่ส่งต่อไปหน้าแรกของ role
 
 const express = require("express");
+const crypto = require("node:crypto");
 const router = express.Router();
 
 const config = require("../config");
@@ -14,18 +15,48 @@ const users = require("../repo/users");
 const devSeed = require("../repo/dev-seed");
 const { HOME, startSession } = require("../auth/session-user");
 const { cognitoLogoutUrl, ALB_COOKIES } = require("../auth/alb");
+const { cognitoAuth, thaiMessage } = require("../auth/cognito");
 
-const alb = config.auth.mode === "alb";
+const MODE = config.auth.mode;
+const alb = MODE === "alb";
+const cognito = MODE === "cognito";
 
-// บัญชีทดลอง แสดงใต้ฟอร์มเฉพาะตอนพัฒนา (SQLite + ไม่ใช่ production)
+const BASE_URL = () => config.appBaseUrl.replace(/\/+$/, "");
+const CALLBACK = () => `${BASE_URL()}/auth/callback`;
+
+const str = (v) => (typeof v === "string" ? v : "");
+
+// บัญชีทดลอง แสดงใต้ฟอร์มเฉพาะตอนพัฒนา (local + SQLite + ไม่ใช่ production)
 function devHint() {
-  return !alb && devSeed.allowed()
+  return MODE === "local" && devSeed.allowed()
     ? devSeed.DEV_ACCOUNTS.map((a) => ({ username: a.username, email: a.email, role: a.role }))
     : [];
 }
 
+function view(extra = {}) {
+  return {
+    error: null,
+    notice: null,
+    login: "",
+    devAccounts: devHint(),
+    authMode: MODE,
+    googleEnabled: cognito,
+    ...extra,
+  };
+}
+
 function goHome(req, res) {
   return res.redirect(HOME[req.session.user.role] || "/login");
+}
+
+// ผู้ใช้จาก Cognito → ตาราง users (sync role จากกลุ่ม) → เริ่ม session
+async function finishCognitoLogin(req, res, identity, via) {
+  const user = await users.syncFromCognito(identity);
+  if (!user.active) {
+    return res.status(403).render("auth/signin", view({ error: "บัญชีนี้ถูกปิดการใช้งาน กรุณาติดต่อผู้ดูแลระบบ" }));
+  }
+  await startSession(req, user, identity.sub, via);
+  res.redirect(HOME[user.role]);
 }
 
 router.get("/", (req, res) => {
@@ -35,33 +66,59 @@ router.get("/", (req, res) => {
 
 router.get("/login", (req, res) => {
   if (req.session.user) return goHome(req, res);
-  res.render("auth/login", { devAccounts: devHint() });
+  res.render("auth/login", view({ notice: req.query.out === "1" ? "ออกจากระบบแล้ว" : null }));
 });
 
 router.get("/signin", (req, res) => {
   if (alb || req.session.user) return res.redirect("/");
-  res.render("auth/signin", { error: null, login: "", devAccounts: devHint() });
+  res.render("auth/signin", view({
+    notice: req.query.reset === "1" ? "ตั้งรหัสผ่านใหม่แล้ว กรุณาเข้าสู่ระบบ" : null,
+    error: req.query.error ? str(req.query.error).slice(0, 200) : null,
+  }));
 });
 
 router.post("/signin", async (req, res, next) => {
   if (alb) return res.redirect("/");
 
-  // ป้องกันค่าที่ไม่ใช่ข้อความ
-  const login =
-    typeof req.body.username === "string" ? req.body.username.trim().toLowerCase() : "";
-  const password = typeof req.body.password === "string" ? req.body.password : "";
+  const login = str(req.body.username).trim().toLowerCase();
+  const password = str(req.body.password);
 
   try {
-    // พิมพ์อีเมล หรือ username ของบัญชีทดลอง (user, staff, admin ...) ก็ได้
+    if (cognito) {
+      if (!login.includes("@")) {
+        return res.status(401).render("auth/signin", view({ error: "กรุณากรอกอีเมล", login }));
+      }
+
+      let result;
+      try {
+        result = await cognitoAuth().signIn(login, password);
+      } catch (error) {
+        if (error.name === "PasswordResetRequiredException") {
+          return res.redirect(`/forgot?email=${encodeURIComponent(login)}&required=1`);
+        }
+        console.warn("[auth] Cognito sign-in:", error.name || error.code, error.message);
+        return res.status(401).render("auth/signin", view({ error: thaiMessage(error), login }));
+      }
+
+      // บัญชีที่ Admin สร้าง (รหัสชั่วคราว) ต้องตั้งรหัสใหม่ก่อน — ทำในหน้าเว็บ
+      if (result.challenge) {
+        req.session.pendingChallenge = { ...result.challenge, email: login, at: Date.now() };
+        return req.session.save(() => res.redirect("/signin/new-password"));
+      }
+
+      return await finishCognitoLogin(req, res, result.identity, "password");
+    }
+
+    // ---------- local ----------
+    // พิมพ์อีเมล หรือ username ของบัญชีทดลอง (user, staff01, admin ...) ก็ได้
     const email = login.includes("@") ? login : devSeed.emailForDevUsername(login);
     const user = email ? await users.authenticate(email, password) : null;
 
     if (!user) {
-      return res.status(401).render("auth/signin", {
+      return res.status(401).render("auth/signin", view({
         error: "อีเมล/ชื่อผู้ใช้ หรือรหัสผ่านไม่ถูกต้อง",
         login,
-        devAccounts: devHint(),
-      });
+      }));
     }
 
     await startSession(req, user);
@@ -71,13 +128,163 @@ router.post("/signin", async (req, res, next) => {
   }
 });
 
+// ---------- ตั้งรหัสผ่านใหม่ครั้งแรก (cognito) ----------
+const CHALLENGE_TTL = 3 * 60 * 1000; // Session ของ Cognito ใช้ได้ 3 นาที
+
+function pending(req) {
+  const p = req.session.pendingChallenge;
+  return p && Date.now() - p.at < CHALLENGE_TTL ? p : null;
+}
+
+router.get("/signin/new-password", (req, res) => {
+  if (!cognito) return res.redirect("/signin");
+  const p = pending(req);
+  if (!p) return res.redirect("/signin?error=" + encodeURIComponent("หมดเวลา กรุณาเข้าสู่ระบบอีกครั้ง"));
+  res.render("auth/new-password", view({ email: p.email }));
+});
+
+router.post("/signin/new-password", async (req, res, next) => {
+  if (!cognito) return res.redirect("/signin");
+  const p = pending(req);
+  if (!p) return res.redirect("/signin?error=" + encodeURIComponent("หมดเวลา กรุณาเข้าสู่ระบบอีกครั้ง"));
+
+  const password = str(req.body.password);
+  if (password !== str(req.body.confirm)) {
+    return res.status(400).render("auth/new-password", view({ email: p.email, error: "รหัสผ่านทั้งสองช่องไม่ตรงกัน" }));
+  }
+
+  try {
+    let result;
+    try {
+      result = await cognitoAuth().completeNewPassword(p, password);
+    } catch (error) {
+      console.warn("[auth] Cognito new password:", error.name || error.code, error.message);
+      return res.status(400).render("auth/new-password", view({ email: p.email, error: thaiMessage(error) }));
+    }
+    delete req.session.pendingChallenge;
+    await finishCognitoLogin(req, res, result.identity, "password");
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---------- ลืมรหัสผ่าน (cognito) ----------
+router.get("/forgot", (req, res) => {
+  if (!cognito) return res.redirect("/signin");
+  res.render("auth/forgot", view({
+    step: "request",
+    email: str(req.query.email),
+    notice: req.query.required === "1" ? "บัญชีนี้ต้องตั้งรหัสผ่านใหม่ ระบบจะส่งรหัสยืนยันไปที่อีเมล" : null,
+  }));
+});
+
+router.post("/forgot", async (req, res) => {
+  if (!cognito) return res.redirect("/signin");
+  const email = str(req.body.email).trim().toLowerCase();
+
+  try {
+    await cognitoAuth().forgotPassword(email);
+  } catch (error) {
+    // ไม่บอกว่าอีเมลมีจริงหรือไม่ ยกเว้นทำบ่อยเกิน/ไม่มีอีเมลยืนยัน
+    if (["LimitExceededException", "TooManyRequestsException", "InvalidParameterException"].includes(error.name)) {
+      return res.status(400).render("auth/forgot", view({ step: "request", email, error: thaiMessage(error) }));
+    }
+    console.warn("[auth] Cognito forgot:", error.name || error.code, error.message);
+  }
+
+  res.render("auth/forgot", view({
+    step: "confirm",
+    email,
+    notice: "ถ้ามีบัญชีนี้ ระบบส่งรหัสยืนยัน 6 หลักไปที่อีเมลแล้ว (ตรวจในกล่องจดหมายขยะด้วย)",
+  }));
+});
+
+router.post("/forgot/confirm", async (req, res) => {
+  if (!cognito) return res.redirect("/signin");
+  const email = str(req.body.email).trim().toLowerCase();
+  const password = str(req.body.password);
+
+  if (password !== str(req.body.confirm)) {
+    return res.status(400).render("auth/forgot", view({ step: "confirm", email, error: "รหัสผ่านทั้งสองช่องไม่ตรงกัน" }));
+  }
+
+  try {
+    await cognitoAuth().confirmForgotPassword(email, str(req.body.code), password);
+    res.redirect("/signin?reset=1");
+  } catch (error) {
+    console.warn("[auth] Cognito confirm forgot:", error.name || error.code, error.message);
+    res.status(400).render("auth/forgot", view({ step: "confirm", email, error: thaiMessage(error) }));
+  }
+});
+
+// ---------- Google (cognito) ----------
+router.get("/auth/google", (req, res) => {
+  if (!cognito) return res.redirect("/login");
+
+  // กันการปลอมคำตอบ: state สุ่มเก็บใน session แล้วตรวจตอนกลับมา
+  req.session.oauthState = crypto.randomBytes(24).toString("hex");
+  req.session.save(() =>
+    res.redirect(cognitoAuth().googleUrl({ redirectUri: CALLBACK(), state: req.session.oauthState }))
+  );
+});
+
+router.get("/auth/callback", async (req, res, next) => {
+  if (!cognito) return res.redirect("/login");
+
+  const fail = (message) =>
+    res.status(401).render("auth/login", view({ error: message }));
+
+  // ปฏิเสธจาก Cognito/Lambda trigger เช่น อีเมลไม่ใช่ @kmitl.ac.th
+  if (req.query.error) {
+    const detail = str(req.query.error_description);
+    console.warn("[auth] Google callback error:", req.query.error, detail);
+    return fail(
+      /domain|kmitl|PreSignUp/i.test(detail)
+        ? "ใช้ได้เฉพาะบัญชี Google ของสถาบัน (@kmitl.ac.th)"
+        : "เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่"
+    );
+  }
+
+  const state = str(req.query.state);
+  const expected = req.session.oauthState;
+  delete req.session.oauthState;
+
+  if (!expected || state.length !== expected.length ||
+      !crypto.timingSafeEqual(Buffer.from(state), Buffer.from(expected))) {
+    return fail("การเข้าสู่ระบบหมดเวลาหรือไม่ถูกต้อง กรุณากดปุ่ม Google อีกครั้ง");
+  }
+
+  try {
+    let result;
+    try {
+      result = await cognitoAuth().exchangeCode({ code: str(req.query.code), redirectUri: CALLBACK() });
+    } catch (error) {
+      console.warn("[auth] Google token:", error.message);
+      return fail("เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่");
+    }
+    await finishCognitoLogin(req, res, result.identity, "google");
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ---------- ออกจากระบบ: กลับหน้า login ของเว็บเสมอ ----------
 router.get("/logout", (req, res, next) => {
+  const via = req.session.user?.via;
+
   req.session.destroy((error) => {
     if (error) return next(error);
 
     res.clearCookie("kidhen.sid");
 
-    if (!alb) return res.redirect("/login");
+    if (cognito) {
+      // เข้าด้วย Google: ต้องออกจาก session ของ Cognito ด้วย ไม่งั้นกด Google ครั้งหน้าจะเข้าเลยโดยไม่ถาม
+      // (Cognito แค่ redirect กลับมา ไม่แสดงหน้าใด ๆ)
+      if (via === "google") return res.redirect(cognitoAuth().logoutUrl(`${BASE_URL()}/login`));
+      return res.redirect("/login?out=1");
+    }
+
+    if (!alb) return res.redirect("/login?out=1");
 
     // โหมด alb: ลบ cookie ของ ALB + ออกจาก Cognito ด้วย ไม่งั้น ALB จะพากลับเข้าระบบทันที
     for (const name of ALB_COOKIES) {
@@ -87,7 +294,7 @@ router.get("/logout", (req, res, next) => {
     const url = cognitoLogoutUrl({
       domain: config.cognito.domain,
       clientId: config.cognito.clientId,
-      logoutUri: `${config.appBaseUrl.replace(/\/+$/, "")}/login`,
+      logoutUri: `${BASE_URL()}/login`,
     });
 
     res.redirect(url || "/login");

@@ -7,22 +7,24 @@ const HOME = {
   USER: "/user/home",
 };
 
-function sessionUser(user, sub = null) {
+// sub = Cognito sub (โหมด alb/cognito), via = "password" | "google" (ใช้ตอน logout)
+function sessionUser(user, sub = null, via = null) {
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     role: user.role,
-    sub, // Cognito sub (โหมด alb) ใช้ดูว่าเปลี่ยนคนล็อกอินหรือยัง
+    sub,
+    via,
   };
 }
 
 // เปลี่ยน session id ทุกครั้งที่ login (กัน session fixation) แล้วบันทึกลงตาราง sessions ก่อน redirect
-function startSession(req, user, sub = null) {
+function startSession(req, user, sub = null, via = null) {
   return new Promise((resolve, reject) => {
     req.session.regenerate((error) => {
       if (error) return reject(error);
-      req.session.user = sessionUser(user, sub);
+      req.session.user = sessionUser(user, sub, via);
       req.session.save((saveError) => (saveError ? reject(saveError) : resolve()));
     });
   });

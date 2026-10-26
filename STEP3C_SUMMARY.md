@@ -1,4 +1,24 @@
-# สรุปขั้น 3c (คำร้อง + แจ้งเตือนลง DB + EventBridge)
+# สรุปขั้น 3c (คำร้อง + แจ้งเตือนลง DB + EventBridge) + 3c-2 (หน้า login ของเว็บเอง)
+
+## 3c-2: ไม่แสดงหน้า Cognito อีกแล้ว (เพิ่มหลังทดสอบใน Learner Lab)
+ปัญหาที่เจอ: บน AWS ผู้ใช้เห็นหน้า Hosted UI ของ Cognito (ALB บังคับ login ทุก path รวมถึง `/login`) และ logout แล้วกลับไปหน้า Cognito
+แก้: `AUTH_MODE=cognito` — เว็บแสดงหน้า login ของ KIDHEN เอง แล้วคุยกับ Cognito จากฝั่ง server
+
+| ผู้ใช้ทำ | เว็บทำ |
+|---|---|
+| กรอกอีเมล/รหัสผ่าน | `InitiateAuth` (USER_PASSWORD_AUTH + SECRET_HASH) → ตรวจ ID token → sync role จาก `cognito:groups` |
+| บัญชีใหม่ (รหัสชั่วคราว) | หน้า "ตั้งรหัสผ่านใหม่" ของเว็บ (`NEW_PASSWORD_REQUIRED`) |
+| ลืมรหัสผ่าน | หน้า "ลืมรหัสผ่าน" ของเว็บ (`ForgotPassword` → รหัส 6 หลักทางอีเมล → `ConfirmForgotPassword`) |
+| Continue with Google | `/auth/google` → หน้า Google ตรง (`identity_provider=Google`, มี state กันปลอม) → `/auth/callback` แลก code |
+| ออกจากระบบ | กลับหน้า login ของเว็บ ("ออกจากระบบแล้ว"); เข้าด้วย Google = ออกจาก session Cognito ด้วย (redirect แวบเดียว) |
+
+ไฟล์: `backend/auth/cognito.js` (ใหม่), `routes/auth.js`, `config.js` (`AUTH_MODE=cognito`), `app.js` (cookie secure ตาม `APP_BASE_URL`), `service/cognito-groups.js` (ทำงานในโหมด cognito ด้วย), views `auth/new-password.ejs`, `auth/forgot.ejs`, `auth/_google.ejs`, `auth/_messages.ejs`, `frontend/public/css/output.css` (build ใหม่), `test/cognito.test.js` (11 ข้อ)
+Terraform: `enable_alb_cognito_auth = false`, `AUTH_MODE` = `cognito`, `app_revision = "3c-2"` — วิธีเปลี่ยนใน Lab ที่เปิดอยู่: `STEP3C_DEPLOY.md` ข้อ [G0]
+ในรายงาน: ลูกศร Authentication เปลี่ยนจาก Cognito → ALB เป็น EC2 ↔ Cognito (ยังใช้ User Pool / Groups / Google / Lambda trigger ครบ)
+`npm test` รวม 6 ชุด 73 ข้อ ผ่านทั้งหมด · ทดสอบกับ Cognito ปลอม (ยังไม่ได้ลองกับ Cognito จริง — ลองจากเครื่องตัวเองได้ ดู [G0])
+
+---
+
 
 ต่อจาก 3b-2 · ทดสอบได้ในเครื่องทั้งหมด (SQLite, ไม่ต้องต่อ AWS) · วิธี deploy: `STEP3C_DEPLOY.md`
 
@@ -89,7 +109,7 @@ detail ที่ส่ง: `{ ticketId, newStatus, statusChanged, title, message
 ```
 cd backend
 npm install
-npm test          # 5 ชุด: 13 + 7 + 17 + 12 + 13 = 62 ข้อ
+npm test          # 6 ชุด: 13 + 7 + 17 + 12 + 13 + 11 = 73 ข้อ
 npm run dev
 ```
 **ถ้าเคยรัน 3b-2 มาแล้ว** ให้ลบ `backend/data/kidhen.sqlite*` ครั้งเดียว เพื่อให้ได้บัญชีทุกคณะ + คำร้องตัวอย่างครบ (ถ้าไม่ลบ ระบบเพิ่มคอลัมน์และบัญชีที่ขาดให้ แต่จะไม่สร้างคำร้องตัวอย่างถ้ามีคำร้องอยู่แล้ว) · โฟลเดอร์ `backend/data/db/` เก่าลบได้ (เหลือใช้แค่ไฟล์หัวข้อปัญหา AI)
