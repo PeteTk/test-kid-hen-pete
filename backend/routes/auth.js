@@ -245,11 +245,16 @@ router.get("/auth/callback", async (req, res, next) => {
   if (req.query.error) {
     const detail = str(req.query.error_description);
     console.warn("[auth] Google callback error:", req.query.error, detail);
-    return fail(
-      /domain|kmitl|PreSignUp/i.test(detail)
-        ? "ใช้ได้เฉพาะบัญชี Google ของสถาบัน (@kmitl.ac.th)"
-        : "เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่"
-    );
+    // แยกสาเหตุ (เดิมจับ "PreSignUp" ทุกกรณีเป็นเรื่องโดเมน ทำให้ข้อความผิด)
+    //   - Lambda pre sign-up ปฏิเสธโดเมน (ข้อความจาก cognito_triggers/app.py)
+    //   - ครั้งแรกที่รวมบัญชี Google เข้ากับบัญชีที่ Admin สร้าง Cognito แจ้ง error หนึ่งครั้ง → กดใหม่ก็เข้าได้
+    let message = "เข้าสู่ระบบด้วย Google ไม่สำเร็จ กรุณาลองใหม่";
+    if (/already found an entry|already exists/i.test(detail)) {
+      message = "เชื่อมบัญชี Google กับบัญชีที่ Admin สร้างไว้แล้ว กรุณากด Continue with Google อีกครั้ง";
+    } else if (/อนุญาตเฉพาะอีเมล|domain/i.test(detail)) {
+      message = "ใช้ได้เฉพาะบัญชี Google ของสถาบัน (@kmitl.ac.th) หรืออีเมลที่ Admin เพิ่มไว้แล้ว";
+    }
+    return fail(message);
   }
 
   const state = str(req.query.state);
