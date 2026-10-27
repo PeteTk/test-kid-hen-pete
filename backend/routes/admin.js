@@ -123,15 +123,29 @@ router.get("/users", async (req, res, next) => {
   try {
     const q = typeof req.query.q === "string" ? req.query.q : "";
     const role = typeof req.query.role === "string" ? req.query.role : "";
+    // ประเภทอีเมล: kmitl = เมลมหาวิทยาลัย / external = อีเมลภายนอก (Gmail ฯลฯ) / nofaculty = นักศึกษาที่ยังไม่มีคณะ
+    const emailType = ["kmitl", "external", "nofaculty"].includes(req.query.email) ? req.query.email : "";
     const keyword = q.trim().toLowerCase();
 
     const all = await Promise.all(
-      (await usersRepo.list()).map(async (u) => ({ ...u, ...(usersRepo.labels(u)) }))
+      (await usersRepo.list()).map(async (u) => ({
+        ...u,
+        ...(usersRepo.labels(u)),
+        external: !String(u.email || "").toLowerCase().endsWith("@kmitl.ac.th"),
+        missingFaculty: u.role === "USER" && !u.faculty_id,
+      }))
     );
+
+    const byEmail = {
+      kmitl: (u) => !u.external,
+      external: (u) => u.external,
+      nofaculty: (u) => u.missingFaculty,
+    };
 
     const list = all.filter((u) =>
       (!keyword || u.name.toLowerCase().includes(keyword) || u.email.toLowerCase().includes(keyword)) &&
-      (!role || u.role === role)
+      (!role || u.role === role) &&
+      (!emailType || byEmail[emailType](u))
     );
 
     const stats = {
@@ -146,7 +160,7 @@ router.get("/users", async (req, res, next) => {
       list,
       ROLES: usersRepo.ROLES,
       stats,
-      filters: { q, role },
+      filters: { q, role, email: emailType },
     });
   } catch (error) {
     next(error);
