@@ -190,7 +190,8 @@ async function renderUserNew(res, form = {}, error = null) {
     FACULTIES: faculties,
     DEPARTMENTS: departments,
     localAuth: LOCAL_AUTH,
-    form: { email: "", name: "", role: "USER", units: [], ...form },
+    STUDENT_FACULTIES: faculties.filter((f) => f.id !== usersRepo.COMMON_FACULTY && f.id !== usersRepo.OTHER_FACULTY),
+    form: { email: "", name: "", role: "USER", units: [], studentFaculty: "", ...form },
     error,
   });
 }
@@ -209,7 +210,9 @@ router.post("/users/new", async (req, res, next) => {
   const role = req.body.role;
   const password = typeof req.body.password === "string" ? req.body.password : "";
   const read = readUnits(req.body);
-  const form = { email, name, role, units: read.units || [] };
+  // นักศึกษาที่อีเมลไม่ใช่รหัส 8 หลัก (เช่น Gmail): Admin เลือกคณะเอง
+  const studentFaculty = typeof req.body.student_faculty === "string" ? req.body.student_faculty.trim() : "";
+  const form = { email, name, role, units: read.units || [], studentFaculty };
   const fail = (message) => renderUserNew(res, form, message);
 
   try {
@@ -217,6 +220,13 @@ router.post("/users/new", async (req, res, next) => {
     if (!name || name.length > 150) return await fail("กรุณากรอกชื่อ-นามสกุล (ไม่เกิน 150 ตัวอักษร)");
     if (!usersRepo.ROLES.includes(role)) return await fail("บทบาทไม่ถูกต้อง");
     if (LOCAL_AUTH && password.length < 4) return await fail("กรุณากำหนดรหัสผ่านอย่างน้อย 4 ตัว");
+
+    let facultyId = null;
+    if (role === "USER" && !(await usersRepo.facultyFromEmail(email))) {
+      const picked = await usersRepo.manualFaculty(studentFaculty);
+      if (!picked) return await fail("อีเมลนี้ไม่ใช่รหัสนักศึกษา 8 หลัก กรุณาเลือกคณะของนักศึกษา");
+      facultyId = picked.id;
+    }
 
     let units = [];
     if (role !== "USER") {
@@ -244,6 +254,7 @@ router.post("/users/new", async (req, res, next) => {
       email,
       name,
       role,
+      facultyId,
       ...(LOCAL_AUTH ? { passwordHash: usersRepo.hashPassword(password) } : {}),
     });
     if (units.length) await usersRepo.setUnits(user.id, units);
@@ -263,11 +274,10 @@ async function renderUserEdit(res, target, extra = {}) {
     usersRepo.listDepartments(),
   ]);
 
-  // นักศึกษา: คณะจากรหัสในอีเมล (แสดงอย่างเดียว)
-  const autoFaculty =
-    target.role === "USER"
-      ? faculties.find((f) => f.id === target.faculty_id) || { id: "-", name: "ไม่พบรหัสคณะในอีเมล" }
-      : null;
+  // นักศึกษา: อีเมลรหัสนักศึกษา = คณะจากรหัส (แสดงอย่างเดียว) / อีเมลอื่น = Admin เลือกคณะ (manualFaculty)
+  const fromEmail = target.role === "USER" ? await usersRepo.facultyFromEmail(target.email) : null;
+  const autoFaculty = fromEmail ? faculties.find((f) => f.id === fromEmail.id) || fromEmail : null;
+  const manualFaculty = target.role === "USER" && !fromEmail ? { current: target.faculty_id || "" } : null;
 
   res.render("admin/user-edit", {
     title: "จัดการผู้ใช้",
@@ -277,6 +287,8 @@ async function renderUserEdit(res, target, extra = {}) {
     FACULTIES: faculties,
     DEPARTMENTS: departments,
     autoFaculty,
+    manualFaculty,
+    STUDENT_FACULTIES: faculties.filter((f) => f.id !== usersRepo.COMMON_FACULTY && f.id !== usersRepo.OTHER_FACULTY),
     error: null,
     saved: false,
     created: null,
@@ -389,9 +401,17 @@ router.post("/users/:id", (req, res, next) => {
         }
       }
 
+      // นักศึกษาที่อีเมลไม่ใช่รหัส 8 หลัก: คณะที่ Admin เลือก (อีเมลรหัสนักศึกษา repo ใช้คณะจากรหัสเอง)
+      const studentFaculty =
+        role === "USER" && typeof req.body.student_faculty === "string" ? req.body.student_faculty.trim() : undefined;
+      if (role === "USER" && studentFaculty === "" && !(await usersRepo.facultyFromEmail(target.email))) {
+        return fail(target, "อีเมลนี้ไม่ใช่รหัสนักศึกษา 8 หลัก กรุณาเลือกคณะของนักศึกษา");
+      }
+
       await usersRepo.update(target.id, {
         name,
         role,
+        ...(studentFaculty !== undefined ? { facultyId: studentFaculty } : {}),
         ...(uploadedKey ? { avatarKey: uploadedKey } : {}),
       });
 

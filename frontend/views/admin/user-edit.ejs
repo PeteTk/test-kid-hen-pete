@@ -128,6 +128,21 @@
                     </div>
                     <p class="text-xs text-gray-400 mt-1">ระบุคณะอัตโนมัติจากรหัสนักศึกษา</p>
 
+                  <% } else if (typeof manualFaculty !== "undefined" && manualFaculty) { %>
+                    <!-- นักศึกษาที่อีเมลไม่ใช่รหัส 8 หลัก (เช่น Gmail): Admin เลือกคณะ -->
+                    <div class="grid grid-cols-2 gap-6">
+                      <select name="student_faculty" class="<%= inputClass %> bg-white">
+                        <option value="">เลือกคณะ</option>
+                        <% STUDENT_FACULTIES.forEach(f => { %>
+                          <option value="<%= f.id %>" <%= manualFaculty.current === f.id ? 'selected' : '' %>><%= f.id %> <%= f.name %></option>
+                        <% }) %>
+                      </select>
+                      <input type="text" readonly value="นักศึกษา" class="<%= readonlyClass %>">
+                    </div>
+                    <p class="text-xs <%= manualFaculty.current ? 'text-gray-400' : 'text-red-600' %> mt-1">
+                      อีเมลไม่ใช่รหัสนักศึกษา 8 หลัก — เลือกคณะเพื่อให้นักศึกษาใช้งานได้
+                    </p>
+
                   <% } else { %>
                     <!-- เจ้าหน้าที่: เพิ่มคณะ / ฝ่ายได้หลายคู่ -->
                     <div id="units" class="flex flex-col gap-3">

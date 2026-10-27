@@ -135,6 +135,24 @@ async function check(name, fn) {
     await assert.rejects(() => users.setPassword("no-such-id", "x"));
   });
 
+  await check("Admin เพิ่มนักศึกษาอีเมลอื่น (เช่น Gmail): เลือกคณะเอง / อีเมลรหัสนักศึกษาใช้คณะจากรหัสเสมอ", async () => {
+    const gmail = await users.create({ email: "somsri@gmail.com", name: "สมศรี", role: "USER", facultyId: "07" });
+    assert.equal(gmail.faculty_id, "07");
+    assert.equal(gmail.student_id, null);
+    // อีเมลรหัสนักศึกษา: ไม่สนค่าที่ส่งมา
+    const real = await users.create({ email: "67010555@kmitl.ac.th", name: "วิศวะ", role: "USER", facultyId: "07" });
+    assert.equal(real.faculty_id, "01");
+    // 00/99 หรือรหัสมั่ว ไม่รับ / ไม่ส่ง = ไม่มีคณะ (เหมือนสมัครเอง)
+    assert.equal((await users.create({ email: "a@gmail.com", name: "a", role: "USER", facultyId: "00" })).faculty_id, null);
+    assert.equal((await users.create({ email: "b@gmail.com", name: "b", role: "USER" })).faculty_id, null);
+    // แก้ภายหลัง: เปลี่ยนคณะได้เฉพาะอีเมลที่ไม่ใช่รหัส / ไม่ส่ง = คงเดิม / ค่าผิด = error
+    assert.equal((await users.update(gmail.id, { facultyId: "01" })).faculty_id, "01");
+    assert.equal((await users.update(gmail.id, { name: "สมศรี ใหม่" })).faculty_id, "01");
+    await assert.rejects(() => users.update(gmail.id, { facultyId: "99" }), /คณะไม่ถูกต้อง/);
+    assert.equal((await users.update(real.id, { facultyId: "07" })).faculty_id, "01");
+    assert.equal(await users.facultyFromEmail("somsri@gmail.com"), null);
+  });
+
   console.log(`\nผ่านทั้งหมด ${passed} ข้อ`);
   await db.close();
 })().catch(async (e) => {

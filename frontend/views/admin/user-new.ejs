@@ -81,8 +81,18 @@
                 </select>
               </div>
 
-              <!-- นักศึกษา: คณะจากรหัสในอีเมล -->
+              <!-- นักศึกษา: คณะจากรหัสในอีเมล / อีเมลอื่น (เช่น Gmail) Admin เลือกคณะเอง -->
               <p id="studentNote" class="text-xs text-gray-400">นักศึกษา: ระบุคณะอัตโนมัติจากรหัสนักศึกษาในอีเมล</p>
+              <div id="studentFacultyBox" class="w-1/2 pr-3">
+                <label for="student_faculty" class="block text-xs font-semibold mb-1">คณะของนักศึกษา</label>
+                <select id="student_faculty" name="student_faculty" class="<%= inputClass %> bg-white">
+                  <option value="">เลือกคณะ</option>
+                  <% STUDENT_FACULTIES.forEach(f => { %>
+                    <option value="<%= f.id %>" <%= form.studentFaculty === f.id ? 'selected' : '' %>><%= f.id %> <%= f.name %></option>
+                  <% }) %>
+                </select>
+                <p class="text-xs text-gray-400 mt-1">อีเมลนี้ไม่ใช่รหัสนักศึกษา 8 หลัก จึงต้องเลือกคณะเอง</p>
+              </div>
 
               <!-- Staff / Admin: คณะ + ฝ่าย -->
               <div id="unitBox">
@@ -140,13 +150,20 @@
   <script>
     // แสดงช่องคณะ/ฝ่ายเฉพาะ Staff / Admin
     const roleSelect = document.getElementById("role");
+    const emailInput = document.getElementById("email");
+    // อีเมลรหัสนักศึกษา 8 หลัก → คณะจากรหัส / อีเมลอื่น → Admin เลือกคณะ (เซิร์ฟเวอร์ตรวจซ้ำอีกชั้น)
+    const STUDENT_EMAIL = /^\d{8}@/;
     function toggleUnits() {
       const student = roleSelect.value === "USER";
+      const fromEmail = STUDENT_EMAIL.test(emailInput.value.trim());
       document.getElementById("unitBox").classList.toggle("hidden", student);
-      document.getElementById("studentNote").classList.toggle("hidden", !student);
+      document.getElementById("studentNote").classList.toggle("hidden", !student || !fromEmail);
+      document.getElementById("studentFacultyBox").classList.toggle("hidden", !student || fromEmail);
+      document.getElementById("student_faculty").disabled = !student || fromEmail;
       document.querySelectorAll("#unitBox select").forEach((s) => (s.disabled = student));
     }
     roleSelect.addEventListener("change", toggleUnits);
+    emailInput.addEventListener("input", toggleUnits);
     toggleUnits();
 
     document.getElementById("addUnit").addEventListener("click", () => {

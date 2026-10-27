@@ -33,6 +33,19 @@ async function facultyFromStudentId(studentId) {
   return rows[0] || null;
 }
 
+// คณะที่ Admin เลือกเอง (นักศึกษาที่อีเมลไม่ใช่รหัส 8 หลัก เช่น Gmail) — ต้องเป็นคณะจริง ไม่ใช่ 00/99
+async function manualFaculty(id) {
+  const value = String(id || "").trim();
+  if (!/^\d{2}$/.test(value) || value === COMMON_FACULTY || value === OTHER_FACULTY) return null;
+  const rows = await db.query("SELECT id, name FROM faculties WHERE id=?", [value]);
+  return rows[0] || null;
+}
+
+// คณะของนักศึกษาจากอีเมล (null = อีเมลไม่ใช่รหัสนักศึกษา → Admin ต้องเลือกเอง)
+async function facultyFromEmail(email) {
+  return facultyFromStudentId(studentIdFromEmail(email));
+}
+
 async function listFaculties() {
   return db.query("SELECT id, name FROM faculties ORDER BY id");
 }
@@ -132,8 +145,9 @@ async function list() {
   return Promise.all(rows.map((row) => withUnits(row)));
 }
 
-// สร้างผู้ใช้ — นักศึกษา: คณะมาจากรหัสในอีเมลเสมอ ไม่รับค่าจากภายนอก
-async function create({ email, name, role = "USER", googleSub = null, passwordHash = null }) {
+// สร้างผู้ใช้ — นักศึกษา: คณะมาจากรหัสในอีเมล
+//   facultyId (เฉพาะ Admin เพิ่มผู้ใช้): ใช้เมื่ออีเมลไม่ใช่รหัสนักศึกษาเท่านั้น (อีเมลรหัสนักศึกษาใช้คณะจากรหัสเสมอ)
+async function create({ email, name, role = "USER", googleSub = null, passwordHash = null, facultyId: chosen = null }) {
   if (!ROLES.includes(role)) db.fail("role ไม่ถูกต้อง");
 
   const cleanEmail = String(email || "").trim().toLowerCase();
@@ -147,7 +161,7 @@ async function create({ email, name, role = "USER", googleSub = null, passwordHa
 
   if (role === "USER") {
     studentId = studentIdFromEmail(cleanEmail);
-    const faculty = await facultyFromStudentId(studentId);
+    const faculty = (await facultyFromStudentId(studentId)) || (await manualFaculty(chosen));
     facultyId = faculty ? faculty.id : null;
     departmentId = "student";
   }
@@ -164,9 +178,10 @@ async function create({ email, name, role = "USER", googleSub = null, passwordHa
   return findById(userId);
 }
 
-// แก้ชื่อ / role / active / รูป (แก้คณะนักศึกษาไม่ได้ ต้องมาจากรหัส)
+// แก้ชื่อ / role / active / รูป
+// คณะนักศึกษา: อีเมลรหัสนักศึกษา = จากรหัสเสมอ / อีเมลอื่น = facultyId ที่ Admin เลือก (undefined = คงเดิม)
 // avatarKey: undefined = ไม่แก้, null = ลบรูป
-async function update(userId, { name, role, active, avatarKey } = {}) {
+async function update(userId, { name, role, active, avatarKey, facultyId: chosen } = {}) {
   const current = await findById(userId);
   if (!current) db.fail("ไม่พบผู้ใช้", 404);
 
@@ -182,9 +197,12 @@ async function update(userId, { name, role, active, avatarKey } = {}) {
   let studentId = current.student_id;
   let departmentId = current.department_id;
 
-  if (nextRole === "USER" && current.role !== "USER") {
+  if (nextRole === "USER") {
+    const fromEmail = await facultyFromEmail(current.email);
+    const picked = chosen === undefined ? null : await manualFaculty(chosen);
+    if (chosen !== undefined && chosen !== "" && !fromEmail && !picked) db.fail("คณะไม่ถูกต้อง");
     studentId = studentIdFromEmail(current.email);
-    facultyId = (await facultyFromStudentId(studentId))?.id ?? null;
+    facultyId = fromEmail?.id ?? picked?.id ?? (current.role === "USER" ? current.faculty_id : null);
     departmentId = "student";
   } else if (nextRole !== "USER" && current.role === "USER") {
     studentId = null;
@@ -337,7 +355,7 @@ async function setEmailNotify(userId, { enabled, arn } = {}) {
 module.exports = {
   labels,
   ROLES, COMMON_FACULTY, OTHER_FACULTY,
-  studentIdFromEmail, facultyIdFromStudentId, facultyFromStudentId,
+  studentIdFromEmail, facultyIdFromStudentId, facultyFromStudentId, facultyFromEmail, manualFaculty,
   listFaculties, listDepartments,
   hashPassword, checkPassword, setPassword, authenticate,
   findById, findByEmail, list, count, create, update, remove, setUnits, staffForTicket, setEmailNotify,
