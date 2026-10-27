@@ -59,6 +59,8 @@ const config = {
     region: str("AWS_REGION", "us-east-1"),
     s3Bucket: str("S3_BUCKET"),
     snsTopicArn: str("SNS_TOPIC_ARN"),
+    // SNS topic ของนักศึกษา: อีเมลแจ้งสถานะคำร้องถึงคนร้องเรียน (ว่าง = ไม่ส่งอีเมล มีแค่กระดิ่งในเว็บ)
+    studentTopicArn: str("STUDENT_SNS_TOPIC_ARN"),
     // ต้องตรงกับ Source ของ EventBridge rule ใน Terraform (event_source)
     eventSource: str("EVENT_SOURCE", "kidhen.app"),
   },

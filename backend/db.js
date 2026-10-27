@@ -324,6 +324,11 @@ async function init() {
   // เพิ่ม (3b-2): รูปโปรไฟล์ เก็บเป็น key (ในเครื่อง = path ใต้ /uploads, ขั้น 3d = object key ใน S3)
   await ensureColumn("users", "avatar_key", "VARCHAR(255)");
 
+  // เพิ่ม: อีเมลแจ้งสถานะคำร้องถึงคนร้องเรียน (SNS topic ของนักศึกษา) — 1 = รับ (ค่าเริ่มต้น), 0 = ปิด
+  // email_sub_arn = subscription ใน SNS (ใช้ดูว่ายืนยันแล้วหรือยัง / ยกเลิก)
+  await ensureColumn("users", "email_notify", "INTEGER NOT NULL DEFAULT 1");
+  await ensureColumn("users", "email_sub_arn", "VARCHAR(255)");
+
   // เพิ่ม (3c): คำร้องเก็บตำแหน่งแยกช่อง + ข้อความเจ้าหน้าที่ล่าสุด + เวลาที่พบปัญหา
   await ensureColumn("tickets", "room", "VARCHAR(100)");
   await ensureColumn("tickets", "place_detail", "VARCHAR(200)");

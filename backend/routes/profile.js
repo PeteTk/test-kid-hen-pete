@@ -9,6 +9,7 @@ const usersRepo = require("../repo/users");
 const { avatarUrl } = require("../auth/session-user");
 const { avatarUpload } = require("../utils/upload");
 const { storage } = require("../service/storage");
+const { emailNotify, STATUS } = require("../service/email-notify");
 
 // ต้อง login ก่อน (role ไหนก็ได้) — app.js โหลด req.account จาก DB ให้แล้ว
 router.use((req, res, next) => {
@@ -28,8 +29,22 @@ async function uploadedAvatar(req) {
   return file ? file.key : null;
 }
 
+// อีเมลแจ้งสถานะคำร้อง (นักศึกษาเท่านั้น): null = ไม่แสดงส่วนนี้
+async function emailNotifyInfo(me) {
+  if (!emailNotify.eligible(me)) return null;
+  const enabled = Number(me.email_notify ?? 1) === 1;
+  if (!enabled) return { enabled, status: STATUS.OFF };
+  try {
+    return { enabled, status: await emailNotify.status(me.email_sub_arn) };
+  } catch (error) {
+    console.warn("[email-notify] อ่านสถานะไม่สำเร็จ:", error.message);
+    return { enabled, status: STATUS.UNAVAILABLE };
+  }
+}
+
 async function renderProfile(res, me, extra = {}) {
   const { facultyLabel, departmentLabel } = usersRepo.labels(me);
+  const emailInfo = await emailNotifyInfo(me);
 
   res.render("profile", {
     title: "แก้ไขข้อมูลผู้ใช้",
@@ -42,6 +57,8 @@ async function renderProfile(res, me, extra = {}) {
     },
     error: null,
     saved: false,
+    emailInfo,
+    emailFlash: null,
     ...extra,
   });
 }
@@ -49,7 +66,11 @@ async function renderProfile(res, me, extra = {}) {
 // เปิดหน้าโปรไฟล์
 router.get("/", async (req, res, next) => {
   try {
-    await renderProfile(res, req.account, { saved: req.query.saved === "1" });
+    const flash = { on: "เปิดรับอีเมลแล้ว", sent: "ส่งอีเมลยืนยันแล้ว กรุณากดลิงก์ในอีเมล (จาก AWS Notifications)", off: "ปิดการรับอีเมลแล้ว" };
+    await renderProfile(res, req.account, {
+      saved: req.query.saved === "1",
+      emailFlash: flash[req.query.email] || null,
+    });
   } catch (error) {
     next(error);
   }
@@ -94,6 +115,41 @@ router.post("/", (req, res, next) => {
       next(error);
     }
   });
+});
+
+// อีเมลแจ้งสถานะคำร้อง: action = on (เปิด) | off (ปิด) | resend (ส่งอีเมลยืนยันอีกครั้ง)
+router.post("/email-notify", async (req, res, next) => {
+  try {
+    const me = req.account;
+    if (!emailNotify.eligible(me)) return res.redirect("/profile");
+    const action = req.body?.action;
+
+    if (action === "off") {
+      if ((await emailNotify.status(me.email_sub_arn)) === STATUS.CONFIRMED) {
+        await emailNotify.unsubscribe(me.email_sub_arn);
+      }
+      await usersRepo.setEmailNotify(me.id, { enabled: false, arn: null });
+      return res.redirect("/profile?email=off");
+    }
+
+    if (action === "on" || action === "resend") {
+      const current = await emailNotify.status(me.email_sub_arn);
+      let arn = me.email_sub_arn ?? null;
+      // ยืนยันแล้ว = เปิดใช้ได้เลย / ยังไม่ยืนยันหรือหมดอายุ = สมัครใหม่ (AWS ส่งอีเมลยืนยัน)
+      if (current !== STATUS.CONFIRMED) arn = await emailNotify.subscribe(me.email);
+      await usersRepo.setEmailNotify(me.id, { enabled: true, arn });
+      return res.redirect(`/profile?email=${current === STATUS.CONFIRMED ? "on" : "sent"}`);
+    }
+
+    res.redirect("/profile");
+  } catch (error) {
+    console.error("[email-notify]", error.message);
+    try {
+      await renderProfile(res, req.account, { error: "ตั้งค่าอีเมลแจ้งเตือนไม่สำเร็จ กรุณาลองใหม่" });
+    } catch (renderError) {
+      next(renderError);
+    }
+  }
 });
 
 module.exports = router;

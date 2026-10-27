@@ -108,6 +108,60 @@
         </div>
 
       </form>
+
+      <% if (typeof emailInfo !== "undefined" && emailInfo) { %>
+        <!-- อีเมลแจ้งสถานะคำร้อง (นักศึกษา) — ส่งผ่าน Amazon SNS ต้องกดยืนยันในอีเมลจาก AWS 1 ครั้ง -->
+        <%
+          const EMAIL_STATUS = {
+            confirmed:   { text: "เปิดใช้งานแล้ว",             cls: "bg-[#E3FBD2] text-[#3A8A12]" },
+            pending:     { text: "รอยืนยันทางอีเมล",           cls: "bg-[#FFF6EB] text-[#E07B12]" },
+            none:        { text: "ยังไม่ได้ยืนยัน / ลิงก์หมดอายุ", cls: "bg-[#FFF6EB] text-[#E07B12]" },
+            off:         { text: "ปิดอยู่",                     cls: "bg-[#EEEDEA] text-gray-600" },
+            unavailable: { text: "ตรวจสอบสถานะไม่ได้ชั่วคราว",  cls: "bg-[#EEEDEA] text-gray-600" },
+          };
+          const st = EMAIL_STATUS[emailInfo.status] || EMAIL_STATUS.unavailable;
+        %>
+        <div id="email-notify" class="bg-white p-6 mt-4">
+          <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div class="min-w-0">
+              <h3 class="text-lg font-bold text-[#1F2A8A]">อีเมลแจ้งสถานะคำร้อง</h3>
+              <p class="text-sm text-gray-600 mt-1">
+                แจ้งไปที่ <span class="font-semibold"><%= me.email %></span> ทุกครั้งที่คำร้องของคุณเปลี่ยนสถานะ
+              </p>
+              <span class="inline-block mt-2 text-sm font-semibold rounded-full px-3 py-1 <%= st.cls %>"><%= st.text %></span>
+              <% if (emailInfo.status === "pending" || emailInfo.status === "none") { %>
+                <p class="text-xs text-gray-500 mt-2">
+                  เปิดอีเมลจาก "AWS Notifications" แล้วกด <span class="font-semibold">Confirm subscription</span>
+                  (ถ้าไม่เจอ ดูในโฟลเดอร์ Spam/Junk) ลิงก์ใช้ได้ 3 วัน
+                </p>
+              <% } %>
+              <% if (emailFlash) { %>
+                <p class="mt-2 text-sm text-[#3A8A12]">✓ <%= emailFlash %></p>
+              <% } %>
+            </div>
+
+            <form method="POST" action="/profile/email-notify" class="flex flex-wrap gap-3 shrink-0">
+              <% if (!emailInfo.enabled) { %>
+                <button name="action" value="on"
+                        class="h-10 px-5 rounded-full border border-black bg-[#F6A85A] text-sm font-bold hover:bg-[#F39A3E]">
+                  เปิดรับอีเมล
+                </button>
+              <% } else { %>
+                <% if (emailInfo.status === "pending" || emailInfo.status === "none") { %>
+                  <button name="action" value="resend"
+                          class="h-10 px-5 rounded-full border border-black bg-[#F6A85A] text-sm font-bold hover:bg-[#F39A3E]">
+                    ส่งอีเมลยืนยันอีกครั้ง
+                  </button>
+                <% } %>
+                <button name="action" value="off"
+                        class="h-10 px-5 rounded-full border border-black bg-[#D9D9D9] text-sm font-bold hover:bg-[#C9C9C9]">
+                  ปิดการรับอีเมล
+                </button>
+              <% } %>
+            </form>
+          </div>
+        </div>
+      <% } %>
     </section>
   </main>
 </div>

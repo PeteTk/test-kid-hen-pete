@@ -26,6 +26,10 @@ function startSession(req, user, sub = null, via = null) {
       if (error) return reject(error);
       req.session.user = sessionUser(user, sub, via);
       req.session.save((saveError) => (saveError ? reject(saveError) : resolve()));
+      // อีเมลแจ้งสถานะคำร้อง (SNS) — ทำเบื้องหลัง ไม่ให้ login ช้า/ล้มเพราะ SNS
+      require("../service/email-notify")
+        .emailNotify.ensureSubscribed(user)
+        .catch((e) => console.warn("[email-notify] สมัครอีเมลไม่สำเร็จ:", e.message));
     });
   });
 }

@@ -324,12 +324,22 @@ function labels(user) {
   };
 }
 
+// อีเมลแจ้งสถานะคำร้อง: enabled = เปิด/ปิด, arn = subscription ใน SNS (undefined = ไม่แก้)
+async function setEmailNotify(userId, { enabled, arn } = {}) {
+  const current = await findById(userId);
+  if (!current) db.fail("ไม่พบผู้ใช้", 404);
+  const nextEnabled = enabled === undefined ? Number(current.email_notify ?? 1) : enabled ? 1 : 0;
+  const nextArn = arn === undefined ? current.email_sub_arn ?? null : arn;
+  await db.query("UPDATE users SET email_notify=?, email_sub_arn=? WHERE id=?", [nextEnabled, nextArn, userId]);
+  return findById(userId);
+}
+
 module.exports = {
   labels,
   ROLES, COMMON_FACULTY, OTHER_FACULTY,
   studentIdFromEmail, facultyIdFromStudentId, facultyFromStudentId,
   listFaculties, listDepartments,
   hashPassword, checkPassword, setPassword, authenticate,
-  findById, findByEmail, list, count, create, update, remove, setUnits, staffForTicket,
+  findById, findByEmail, list, count, create, update, remove, setUnits, staffForTicket, setEmailNotify,
   GROUP_ROLE, roleFromGroups, syncFromCognito,
 };

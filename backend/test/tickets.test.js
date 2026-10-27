@@ -255,17 +255,21 @@ function browser() {
     await check("หัวข้อปัญหา (AI ปลอม): จัดกลุ่ม #0002+#0003 จาก DB → นศ.วิศวะเห็น → สนับสนุนแล้วได้คำร้องใหม่", async () => {
       const issues = require("../service/issues");
 
+      // AI ปลอม: ถังเดียวกัน (ประเภท + สถานที่) = กลุ่มเดียว ตั้งชื่อจากหัวข้อ
       const fakeAI = async ({ input }) => {
+        assert.ok(input.reports.every((r) => typeof r.title === "string" && !("detail" in r)));
         const groups = new Map();
         for (const r of input.reports) {
-          const key = JSON.stringify([r.type, r.placeKey, [...r.symptoms].sort()]);
-          if (!groups.has(key)) groups.set(key, { title: r.symptoms[0], ids: [] });
+          const key = JSON.stringify([r.type, r.placeKey]);
+          const title = /แอร์|เครื่องปรับอากาศ/.test(r.title) ? "เครื่องปรับอากาศขัดข้อง" : r.title;
+          if (!groups.has(key)) groups.set(key, { title, ids: [] });
           groups.get(key).ids.push(r.id);
         }
         return {
           groups: [...groups.values()].map(({ title, ids }) => ({
             topicId: null, title, summary: `พบรายงาน${title}`, ids,
           })),
+          skip: [],
         };
       };
 
@@ -274,8 +278,10 @@ function browser() {
       // 3d: หัวข้ออยู่ใน RDS/SQLite (ตาราง issues) + ประวัติใน ai_runs + ไม่มีข้อความต้นฉบับใน ai_inputs
       const run = await db.query("SELECT success, processed FROM ai_runs ORDER BY started_at DESC LIMIT 1");
       assert.equal(Number(run[0].success), 1);
+      // ส่ง AI เฉพาะหัวข้อ — ไม่มีรายละเอียด ชื่ออาคาร หรือข้อมูลผู้แจ้ง
       for (const row of await db.query("SELECT sanitized_text FROM ai_inputs WHERE state='ready'")) {
-        assert.doesNotMatch(row.sanitized_text, /แอร์|E12|301|ไม่เย็น/);
+        assert.doesNotMatch(row.sanitized_text, /ตั้งแต่สัปดาห์ก่อน|จนเรียนไม่ได้|E12|@kmitl/);
+        assert.deepEqual(Object.keys(JSON.parse(row.sanitized_text)).sort(), ["placeKey", "title", "type"]);
       }
       // รอบสอง: ไม่มีอะไรใหม่ → ไม่เรียก AI
       let called = false;
